@@ -322,6 +322,25 @@ label {
   margin: 12px 0;
 }
 
+.early-stop-banner {
+  padding: 16px 18px;
+  background: #fff4f2;
+  border: 2px solid #e6a29a;
+  color: #14345e;
+  border-radius: 12px;
+  margin: 12px 0;
+}
+
+.early-stop-banner p {
+  margin: 4px 0;
+}
+
+.early-stop-title {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--color-danger);
+}
+
 .error-banner {
   padding: 12px 14px;
   background: var(--color-danger-bg);

@@ -40,18 +40,24 @@ public class ScreeningSessionService
 
     private readonly AppDbContext _db;
     private readonly AdaptiveQuestionService _adaptiveQuestionService;
+    private readonly AnswerEvaluationService _answerEvaluationService;
     private readonly ClaudeService _claudeService;
+    private readonly AuditService _auditService;
     private readonly ILogger<ScreeningSessionService> _logger;
 
     public ScreeningSessionService(
         AppDbContext db,
         AdaptiveQuestionService adaptiveQuestionService,
+        AnswerEvaluationService answerEvaluationService,
         ClaudeService claudeService,
+        AuditService auditService,
         ILogger<ScreeningSessionService> logger)
     {
         _db = db;
         _adaptiveQuestionService = adaptiveQuestionService;
+        _answerEvaluationService = answerEvaluationService;
         _claudeService = claudeService;
+        _auditService = auditService;
         _logger = logger;
     }
 
@@ -96,9 +102,41 @@ public class ScreeningSessionService
             .Where(c => c.ProtocolId == session.ProtocolId && linkedCriteriaIds.Contains(c.CriterionId))
             .ToListAsync();
 
-        var perCriterionStatuses = linkedCriteria
-            .Select(c => AdaptiveQuestionService.DetermineMappedStatus(c, responseText))
-            .ToList();
+        var perCriterionStatuses = new List<string>();
+        var reasonings = new List<string>();
+        var evaluationSource = "deterministic";
+        string? promptVersion = null;
+        string? modelName = null;
+
+        // Only disqualifying-capable questions (linked to an Exclusion or
+        // Required-Inclusion criterion) get an AI-assisted evaluation call —
+        // every other answer keeps the existing deterministic heuristic
+        // unchanged, per plan2.md's "targeted AI calls only" decision.
+        if (question.CanTriggerEarlyStop && linkedCriteria.Count > 0)
+        {
+            foreach (var criterion in linkedCriteria)
+            {
+                var evaluation = await _answerEvaluationService.EvaluateAsync(question, criterion, responseText);
+                perCriterionStatuses.Add(evaluation.MappedStatus);
+                if (!string.IsNullOrWhiteSpace(evaluation.Reasoning))
+                {
+                    reasonings.Add(evaluation.Reasoning);
+                }
+
+                evaluationSource = evaluation.EvaluationSource;
+                promptVersion = evaluation.PromptVersion;
+                modelName = evaluation.ModelName;
+
+                await _auditService.LogEventAsync(
+                    "AnswerAiEvaluation",
+                    sessionId: sessionId,
+                    details: $"questionId={questionId}; criterionId={criterion.CriterionId}; source={evaluation.EvaluationSource}; status={evaluation.MappedStatus}");
+            }
+        }
+        else
+        {
+            perCriterionStatuses.AddRange(linkedCriteria.Select(c => AdaptiveQuestionService.DetermineMappedStatus(c, responseText)));
+        }
 
         var answer = new ScreeningAnswer
         {
@@ -110,16 +148,29 @@ public class ScreeningSessionService
             ResponseText = responseText,
             MappedEligibilityStatus = AdaptiveQuestionService.SummarizeStatus(perCriterionStatuses),
             CoveredMultipleCriteria = linkedCriteriaIds.Count > 1,
-            SkippedDueToDemographics = false
+            SkippedDueToDemographics = false,
+            EvaluationSource = evaluationSource,
+            AiReasoning = reasonings.Count > 0 ? string.Join(" ", reasonings) : null,
+            PromptVersion = promptVersion,
+            ModelName = modelName
         };
 
         _db.ScreeningAnswers.Add(answer);
         await _db.SaveChangesAsync();
 
-        // Recompute and persist the session's live section/status after this answer.
+        // Recompute and persist the session's live section/status after this
+        // answer, including the deterministic (backend-enforced, never
+        // Claude-decided) early-stop recommendation.
         var state = await GetStateAsync(sessionId);
         session.CurrentSection = state.CurrentSection;
         session.OverallLikelyStatus = state.OverallLikelyStatus;
+        session.EarlyStopRecommended = state.EarlyStopTriggered;
+        session.EarlyStopReason = state.EarlyStopReason;
+        session.DisqualifyingCriterionId = state.DisqualifyingCriterionId;
+        if (state.EarlyStopTriggered && session.EarlyStopDetectedAt is null)
+        {
+            session.EarlyStopDetectedAt = DateTime.UtcNow;
+        }
 
         if (state.NextQuestion is null)
         {

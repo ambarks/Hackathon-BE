@@ -225,7 +225,8 @@ docker system prune
 - No authentication or multi-user support.
 - Simplified, heuristic PDF parsing and section-chunking (paragraph/heading based, not a full document-structure parser).
 - Limited clinical validation — mapped eligibility status uses a first-word yes/no heuristic plus a `requiresClinicalReview` downgrade rule, not real clinical logic.
-- Rule-based/deterministic fallback logic is used whenever Claude is unavailable, for criteria extraction, question bank generation, and summary narration.
+- Rule-based/deterministic fallback logic is used whenever Claude is unavailable, for criteria extraction, question bank generation, summary narration, and answer evaluation.
+- The early-stop feature's AI-assisted answer evaluation (`AnswerEvaluationService`) only calls Claude for questions where `canTriggerEarlyStop` is true (linked to an Exclusion or Required-Inclusion criterion) — every other answer keeps the original yes/no heuristic. Claude never decides whether to stop; it only classifies the answer, and a fixed backend rule in `AdaptiveQuestionService`/`ScreeningSessionService` decides the recommendation. In fallback mode, evaluation degrades to the same yes/no heuristic, which cannot resolve numeric-range criteria (e.g. an age outside a required range) — a known, documented limitation rather than a crash.
 - `EnsureCreatedAsync` is used for schema creation instead of production-grade, versioned EF Core migrations.
 
 ## 20. Safety and Responsible AI reminder

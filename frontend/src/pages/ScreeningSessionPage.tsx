@@ -1,8 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { NextQuestion, SectionProgress, getNextQuestion, getSectionProgress, submitAnswer } from "../api/client";
+import {
+  NextQuestion,
+  SectionProgress,
+  endScreeningSession,
+  getNextQuestion,
+  getSectionProgress,
+  submitAnswer
+} from "../api/client";
 import { useAiStatus } from "../api/AiStatusContext";
 import { useWorkflow } from "../api/WorkflowContext";
+
+interface EarlyStopRecommendation {
+  reason: string | null;
+  criterionId: string | null;
+}
 
 export default function ScreeningSessionPage() {
   const { sessionId } = useWorkflow();
@@ -14,7 +26,11 @@ export default function ScreeningSessionPage() {
   const [textAnswer, setTextAnswer] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [lastEarlyStop, setLastEarlyStop] = useState<string | null>(null);
+  // Authoritative, backend-computed recommendation (never a frontend guess) —
+  // set from submitAnswer's response, or restored from the session's live
+  // state on load (e.g. after a page refresh). Claude only assists in
+  // classifying the answer; the backend decides whether to recommend stopping.
+  const [earlyStop, setEarlyStop] = useState<EarlyStopRecommendation | null>(null);
 
   const load = useCallback(async () => {
     if (!sessionId) return;
@@ -22,6 +38,9 @@ export default function ScreeningSessionPage() {
       const [next, prog] = await Promise.all([getNextQuestion(sessionId), getSectionProgress(sessionId)]);
       setQuestion(next);
       setProgress(prog);
+      setEarlyStop(
+        next.sessionEarlyStopRecommended ? { reason: next.sessionEarlyStopReason, criterionId: next.sessionDisqualifyingCriterionId } : null
+      );
     } catch (err) {
       setError((err as Error).message);
     }
@@ -38,7 +57,8 @@ export default function ScreeningSessionPage() {
     try {
       const result = await submitAnswer(sessionId, question.questionId, response);
       setTextAnswer("");
-      setLastEarlyStop(result.mappedEligibilityStatus === "failed" && question.canTriggerEarlyStop ? question.earlyStopReason : null);
+      await refreshAiStatus();
+      setEarlyStop(result.earlyStopRecommended ? { reason: result.earlyStopReason, criterionId: result.disqualifyingCriterionId } : null);
       await load();
     } catch (err) {
       setError((err as Error).message);
@@ -50,6 +70,23 @@ export default function ScreeningSessionPage() {
   async function handleEndSession() {
     await refreshAiStatus();
     navigate("/summary");
+  }
+
+  async function handleEndEarly() {
+    if (!sessionId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await endScreeningSession(sessionId);
+      await handleEndSession();
+    } catch (err) {
+      setError((err as Error).message);
+      setBusy(false);
+    }
+  }
+
+  function handleContinueScreening() {
+    setEarlyStop(null);
   }
 
   if (!sessionId) {
@@ -71,7 +108,27 @@ export default function ScreeningSessionPage() {
       </div>
 
       {error && <div className="error-banner">{error}</div>}
-      {lastEarlyStop && <div className="warning">Possible early stop: {lastEarlyStop}</div>}
+
+      {earlyStop && (
+        <div className="early-stop-banner">
+          <p className="early-stop-title">Screening result may already be determined</p>
+          <p>
+            {earlyStop.reason ?? "The recorded answers so far indicate this patient does not meet a required or exclusionary criterion."}
+            {earlyStop.criterionId && ` (criterion ${earlyStop.criterionId})`}
+          </p>
+          <p className="progress-label">
+            This is AI-assisted guidance only — the recruiter decides whether to end the session now or continue.
+          </p>
+          <div className="button-row">
+            <button className="button button-primary" disabled={busy} onClick={handleEndEarly}>
+              End &amp; View Summary
+            </button>
+            <button className="button button-secondary" disabled={busy} onClick={handleContinueScreening}>
+              Continue Screening
+            </button>
+          </div>
+        </div>
+      )}
 
       {progress && (
         <div className="card">

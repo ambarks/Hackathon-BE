@@ -47,6 +47,19 @@ Notice that a high-priority **exclusion** question (CRT-001) is asked before sev
 
 *(Alternative disqualifying path: answering "Yes, taking insulin" at CRT-004 has the same effect via `EXC-004`.)*
 
+### Scenario 2b — AI-assisted early stop via numeric range (age)
+
+The age question (`DEM-002`, linked to `INC-001`, a Required criterion requiring "18 to 75 years") is marked `canTriggerEarlyStop`. Unlike a plain yes/no exclusion answer, a numeric range can't be resolved by the deterministic yes/no heuristic — so this specific question's answer is sent to Claude to interpret against the criterion text, with the backend still deciding whether to recommend stopping.
+
+| Question | Answer |
+|---|---|
+| DEM-001 Pregnant/breastfeeding/planning pregnancy? | No |
+| DEM-002 Current age? | **16** |
+
+**Expected outcome:** the `answers` response returns `earlyStopRecommended: true` with a reason referencing `INC-001` and the 18–75 range (Claude-assisted interpretation of the numeric answer). A banner appears immediately on the Screening Session page: "Screening result may already be determined," with **End & View Summary** and **Continue Screening** actions — the session is never auto-completed or blocked. Ending early produces a **Likely Ineligible** summary with `INC-001` under "Failed" and every other criterion listed under "Skipped (session ended early)."
+
+*Fallback-mode note: if Claude is unavailable, this specific numeric-range case is not caught by the deterministic yes/no fallback heuristic — a documented limitation (see README.md/CODESETUP.md hackathon simplifications). Fallback mode still correctly catches plain yes/no disqualifiers such as Scenario 2's Type 1 Diabetes / insulin answers.*
+
 ## Scenario 3 — Needs Clinical Review (uncertain medication history)
 
 | Question | Answer |

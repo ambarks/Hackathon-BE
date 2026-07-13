@@ -17,6 +17,8 @@ public record SessionStateSnapshot(
     ScreeningQuestion? NextQuestion,
     string CurrentSection,
     bool EarlyStopTriggered,
+    string? EarlyStopReason,
+    string? DisqualifyingCriterionId,
     string OverallLikelyStatus); // Pending | Likely Eligible | Likely Ineligible | Needs Clinical Review
 
 // Deterministic, backend-controlled adaptive logic (prompt.txt section F).
@@ -62,8 +64,40 @@ public class AdaptiveQuestionService
 
         var states = stateByCriterion.Values.Select(s => s.Build()).ToList();
 
-        var earlyStopTriggered = states.Any(s =>
-            s.Status == "failed" && s.Type.Equals("Exclusion", StringComparison.OrdinalIgnoreCase));
+        // The backend — never Claude — decides whether screening should stop:
+        // a failed criterion whose EligibilityImpact is Exclusionary or Required
+        // means the result is already determined regardless of any remaining
+        // answers (e.g. age 16 vs a required 18-75 range). This is a fixed rule
+        // over the (possibly AI-assisted, see AnswerEvaluationService) status
+        // already computed above, not a Claude decision itself.
+        var disqualifyingState = states.FirstOrDefault(s =>
+            s.Status == "failed" &&
+            (s.EligibilityImpact.Equals("Exclusionary", StringComparison.OrdinalIgnoreCase) ||
+             s.EligibilityImpact.Equals("Required", StringComparison.OrdinalIgnoreCase)));
+
+        var earlyStopTriggered = disqualifyingState is not null;
+        string? earlyStopReason = null;
+        string? disqualifyingCriterionId = disqualifyingState?.CriterionId;
+
+        if (disqualifyingState is not null)
+        {
+            var resolvingAnswer = disqualifyingState.ResolvedByQuestionId is not null &&
+                latestAnswerByQuestionId.TryGetValue(disqualifyingState.ResolvedByQuestionId, out var answerForCriterion)
+                ? answerForCriterion
+                : null;
+
+            if (!string.IsNullOrWhiteSpace(resolvingAnswer?.AiReasoning))
+            {
+                earlyStopReason = resolvingAnswer!.AiReasoning;
+            }
+            else
+            {
+                var criterionText = criteriaById.TryGetValue(disqualifyingState.CriterionId, out var criterion)
+                    ? criterion.SimpleMeaning ?? criterion.OriginalText
+                    : disqualifyingState.CriterionId;
+                earlyStopReason = $"The recorded answer does not meet criterion {disqualifyingState.CriterionId}: {criterionText}";
+            }
+        }
 
         var remaining = allQuestions
             .Where(q => !latestAnswerByQuestionId.ContainsKey(q.QuestionId))
@@ -75,7 +109,8 @@ public class AdaptiveQuestionService
         var currentSection = nextQuestion?.Section ?? "Completed";
         var overallStatus = DetermineOverallStatus(states, allAnswered: remaining.Count == 0);
 
-        return new SessionStateSnapshot(states, remaining, nextQuestion, currentSection, earlyStopTriggered, overallStatus);
+        return new SessionStateSnapshot(
+            states, remaining, nextQuestion, currentSection, earlyStopTriggered, earlyStopReason, disqualifyingCriterionId, overallStatus);
     }
 
     // Heuristic: the first word of a free-text response is checked for yes/no;

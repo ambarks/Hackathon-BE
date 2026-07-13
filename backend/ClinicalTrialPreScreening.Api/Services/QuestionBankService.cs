@@ -304,7 +304,12 @@ public class QuestionBankService
         foreach (var criterion in demographicCriteria)
         {
             var questionId = $"DEM-{demoIndex:000}";
-            var isExclusionary = criterion.EligibilityImpact.Equals("Exclusionary", StringComparison.OrdinalIgnoreCase);
+            // A question can disqualify a patient if its criterion is Exclusionary
+            // (a "yes"-type answer excludes them) or Required (a failing answer
+            // means a mandatory inclusion criterion is not met) — matching the
+            // fixed backend disqualification rule in AdaptiveQuestionService.
+            var canDisqualify = criterion.EligibilityImpact.Equals("Exclusionary", StringComparison.OrdinalIgnoreCase) ||
+                criterion.EligibilityImpact.Equals("Required", StringComparison.OrdinalIgnoreCase);
 
             var question = new ScreeningQuestion
             {
@@ -322,9 +327,9 @@ public class QuestionBankService
                 WhyAsked = $"This demographic question determines eligibility for criterion {criterion.CriterionId}: {criterion.SimpleMeaning ?? criterion.OriginalText}",
                 IsDemographicQuestion = true,
                 IsDuplicateSuppressed = false,
-                CanTriggerEarlyStop = isExclusionary,
-                EarlyStopReason = isExclusionary
-                    ? $"An answer indicating this exclusion criterion applies may mean the patient is likely ineligible ({criterion.CriterionId})."
+                CanTriggerEarlyStop = canDisqualify,
+                EarlyStopReason = canDisqualify
+                    ? $"An answer that does not meet this criterion may mean the patient is likely ineligible ({criterion.CriterionId})."
                     : null,
                 PromptVersion = PromptVersion,
                 ModelName = FallbackModelLabel
@@ -352,7 +357,10 @@ public class QuestionBankService
         var criteriaIndex = 1;
         foreach (var criterion in orderedCriteria)
         {
-            var isExclusion = criterion.Type.Equals("Exclusion", StringComparison.OrdinalIgnoreCase);
+            // Same disqualification rule as the demographics loop above: Exclusionary
+            // or Required criteria can disqualify a patient on a failing answer.
+            var canDisqualify = criterion.EligibilityImpact.Equals("Exclusionary", StringComparison.OrdinalIgnoreCase) ||
+                criterion.EligibilityImpact.Equals("Required", StringComparison.OrdinalIgnoreCase);
 
             criteriaQuestions.Add(new ScreeningQuestion
             {
@@ -370,9 +378,9 @@ public class QuestionBankService
                 WhyAsked = $"This question checks {criterion.Type.ToLowerInvariant()} criterion {criterion.CriterionId}: {criterion.SimpleMeaning ?? criterion.OriginalText}",
                 IsDemographicQuestion = false,
                 IsDuplicateSuppressed = false,
-                CanTriggerEarlyStop = isExclusion,
-                EarlyStopReason = isExclusion
-                    ? $"A disqualifying answer here may indicate likely ineligibility due to exclusion criterion {criterion.CriterionId}."
+                CanTriggerEarlyStop = canDisqualify,
+                EarlyStopReason = canDisqualify
+                    ? $"A disqualifying answer here may indicate likely ineligibility due to criterion {criterion.CriterionId}."
                     : null,
                 PromptVersion = PromptVersion,
                 ModelName = FallbackModelLabel

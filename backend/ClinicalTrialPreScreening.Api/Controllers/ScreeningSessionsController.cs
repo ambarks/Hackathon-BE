@@ -78,7 +78,9 @@ public class ScreeningSessionsController : ControllerBase
 
         if (next is null)
         {
-            return Ok(new NextQuestionResponse(false, null, null, null, null, null, null, null, null, null, false, false, null));
+            return Ok(new NextQuestionResponse(
+                false, null, null, null, null, null, null, null, null, null, false, false, null,
+                state.EarlyStopTriggered, state.EarlyStopReason, state.DisqualifyingCriterionId));
         }
 
         return Ok(new NextQuestionResponse(
@@ -94,7 +96,10 @@ public class ScreeningSessionsController : ControllerBase
             next.WhyAsked,
             next.IsDemographicQuestion,
             next.CanTriggerEarlyStop,
-            next.EarlyStopReason));
+            next.EarlyStopReason,
+            state.EarlyStopTriggered,
+            state.EarlyStopReason,
+            state.DisqualifyingCriterionId));
     }
 
     [HttpGet("{sessionId:guid}/current-section")]
@@ -170,12 +175,44 @@ public class ScreeningSessionsController : ControllerBase
                 answer.CoveredMultipleCriteria,
                 session!.CurrentSection,
                 session.OverallLikelyStatus,
-                session.Status == "Completed"));
+                session.Status == "Completed",
+                session.EarlyStopRecommended,
+                session.EarlyStopReason,
+                session.DisqualifyingCriterionId));
         }
         catch (KeyNotFoundException ex)
         {
             return NotFound(new { message = ex.Message });
         }
+    }
+
+    // Recruiter-initiated: ends the session immediately, regardless of how many
+    // questions remain unanswered. Never called automatically — the backend's
+    // early-stop recommendation is always a suggestion, not a forced action
+    // (see plan2.md "recommend, don't force"). Safe to call at any time, not
+    // only when EarlyStopRecommended is true.
+    [HttpPost("{sessionId:guid}/end")]
+    public async Task<IActionResult> EndSession(Guid sessionId)
+    {
+        var session = await _db.ScreeningSessions.FindAsync(sessionId);
+        if (session is null)
+        {
+            return NotFound(new { message = $"Screening session {sessionId} was not found." });
+        }
+
+        if (session.Status != "Completed")
+        {
+            session.Status = "Completed";
+            session.CompletedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync();
+
+            await _auditService.LogEventAsync(
+                "ScreeningSessionEndedEarly",
+                sessionId: sessionId,
+                details: $"earlyStopRecommended={session.EarlyStopRecommended}; disqualifyingCriterionId={session.DisqualifyingCriterionId}");
+        }
+
+        return Ok(ToSessionResponse(session));
     }
 
     [HttpGet("{sessionId:guid}/summary")]
@@ -286,7 +323,10 @@ public class ScreeningSessionsController : ControllerBase
         session.Status,
         session.OverallLikelyStatus,
         session.CreatedAt,
-        session.CompletedAt);
+        session.CompletedAt,
+        session.EarlyStopRecommended,
+        session.EarlyStopReason,
+        session.DisqualifyingCriterionId);
 }
 
 public record CreateSessionRequest(Guid ProtocolId, string PatientAlias);
@@ -299,8 +339,16 @@ public record SessionResponse(
     string Status,
     string? OverallLikelyStatus,
     DateTime CreatedAt,
-    DateTime? CompletedAt);
+    DateTime? CompletedAt,
+    bool EarlyStopRecommended,
+    string? EarlyStopReason,
+    string? DisqualifyingCriterionId);
 
+// CanTriggerEarlyStop/EarlyStopReason are static per-question metadata set at
+// question-bank generation time (does this question *risk* disqualifying the
+// patient). SessionEarlyStopRecommended/SessionEarlyStopReason/
+// SessionDisqualifyingCriterionId are the live, backend-computed recommendation
+// for the session *as of the answers recorded so far* (see plan2.md).
 public record NextQuestionResponse(
     bool HasNextQuestion,
     string? QuestionId,
@@ -314,7 +362,10 @@ public record NextQuestionResponse(
     string? WhyAsked,
     bool IsDemographicQuestion,
     bool CanTriggerEarlyStop,
-    string? EarlyStopReason);
+    string? EarlyStopReason,
+    bool SessionEarlyStopRecommended,
+    string? SessionEarlyStopReason,
+    string? SessionDisqualifyingCriterionId);
 
 public record SectionProgressDetail(int Answered, int Total);
 
@@ -334,7 +385,10 @@ public record AnswerResponse(
     bool CoveredMultipleCriteria,
     string CurrentSection,
     string? OverallLikelyStatus,
-    bool SessionCompleted);
+    bool SessionCompleted,
+    bool EarlyStopRecommended,
+    string? EarlyStopReason,
+    string? DisqualifyingCriterionId);
 
 public record SummaryResponse(
     string Recommendation,

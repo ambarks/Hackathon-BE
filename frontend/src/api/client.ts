@@ -177,6 +177,9 @@ export interface ScreeningSession {
   overallLikelyStatus: string | null;
   createdAt: string;
   completedAt: string | null;
+  earlyStopRecommended: boolean;
+  earlyStopReason: string | null;
+  disqualifyingCriterionId: string | null;
 }
 
 export interface NextQuestion {
@@ -193,6 +196,11 @@ export interface NextQuestion {
   isDemographicQuestion: boolean;
   canTriggerEarlyStop: boolean;
   earlyStopReason: string | null;
+  // Live, backend-computed recommendation for the session as of the answers
+  // recorded so far (distinct from the static per-question fields above).
+  sessionEarlyStopRecommended: boolean;
+  sessionEarlyStopReason: string | null;
+  sessionDisqualifyingCriterionId: string | null;
 }
 
 export interface SectionProgress {
@@ -211,6 +219,9 @@ export interface AnswerResult {
   currentSection: string;
   overallLikelyStatus: string | null;
   sessionCompleted: boolean;
+  earlyStopRecommended: boolean;
+  earlyStopReason: string | null;
+  disqualifyingCriterionId: string | null;
 }
 
 export const createScreeningSession = (protocolId: string, patientAlias: string) =>
@@ -233,6 +244,12 @@ export const submitAnswer = (sessionId: string, questionId: string, response: st
     method: "POST",
     body: JSON.stringify({ questionId, response })
   });
+
+// Recruiter-initiated: ends the session immediately regardless of how many
+// questions remain unanswered. Never called automatically by the app itself —
+// the early-stop signal above is always a recommendation, not a forced action.
+export const endScreeningSession = (sessionId: string) =>
+  request<ScreeningSession>(`/api/screening-sessions/${sessionId}/end`, { method: "POST" });
 
 // ---- Summary ----
 

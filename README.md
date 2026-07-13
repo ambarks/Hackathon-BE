@@ -124,6 +124,7 @@ This removes the SQL Server, Qdrant, and uploads/exports volumes, so the next `d
 - SQL Server and Qdrant run locally in Docker rather than as managed enterprise services.
 - No authentication or multi-user support.
 - Rule-based/deterministic fallback logic stands in for Claude whenever it is unavailable.
+- AI-assisted early-stop evaluation (interpreting an answer against a disqualifying criterion, e.g. age vs a required range) calls Claude only for questions linked to an Exclusion or Required-Inclusion criterion, not every answer; in fallback mode it degrades to the same yes/no heuristic used elsewhere, which does not catch numeric-range cases.
 
 ## Responsible AI
 

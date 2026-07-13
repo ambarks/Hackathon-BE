@@ -33,6 +33,17 @@
       "earlyStopNote": "Screening can end as soon as EXC-004 is answered 'Yes, taking insulin'; remaining questions are optional for the recruiter."
     },
     {
+      "scenarioId": "SCN-INELIGIBLE-002",
+      "label": "Likely Ineligible (AI-assisted early stop via age range)",
+      "patientAlias": "Patient-Delta",
+      "description": "A patient below the protocol's minimum age. The age question (DEM-002/DEM-001 depending on generated order, linked to INC-001, a Required numeric-range criterion) is marked canTriggerEarlyStop, so the recorded answer is sent to Claude to interpret against the '18 to 75' range rather than relying on the yes/no heuristic, which cannot evaluate numeric ranges.",
+      "expectedRecommendation": "Likely Ineligible",
+      "sampleAnswers": [
+        { "criterionId": "INC-001", "topic": "Age", "response": "16", "notes": "Below the required 18-75 range; AI-assisted evaluation classifies this as failed with reasoning referencing the range." }
+      ],
+      "earlyStopNote": "As soon as the age question is answered '16', the answers endpoint returns earlyStopRecommended=true with a reason referencing criterion INC-001. The session stays InProgress and next-question keeps working; the recruiter chooses End & View Summary (POST /{sessionId}/end) or Continue Screening. In fallback mode (Claude unavailable) this specific numeric-range case is NOT caught by the deterministic yes/no heuristic — a documented limitation, see README.md/CODESETUP.md hackathon simplifications."
+    },
+    {
       "scenarioId": "SCN-NEEDS-REVIEW-001",
       "label": "Needs Clinical Review",
       "patientAlias": "Patient-Charlie",

@@ -39,6 +39,7 @@ builder.Services.AddHttpClient<ClaudeService>();
 builder.Services.AddScoped<CriteriaExtractionService>();
 builder.Services.AddScoped<QuestionBankService>();
 builder.Services.AddSingleton<AdaptiveQuestionService>();
+builder.Services.AddScoped<AnswerEvaluationService>();
 builder.Services.AddScoped<ScreeningSessionService>();
 builder.Services.AddHttpClient<EmbeddingClient>();
 builder.Services.AddHttpClient<QdrantService>();

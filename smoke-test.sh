@@ -106,6 +106,65 @@ if [ -n "$protocol_id" ]; then
     PASS=$((PASS + 1))
     code=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/api/screening-sessions/$session_id/next-question")
     check "GET /api/screening-sessions/$session_id/next-question" 200 "$code"
+
+    echo "== AI-assisted early-stop (numeric-range disqualifying criterion) =="
+    early_stop_checked=false
+    for i in $(seq 1 15); do
+      nq=$(curl -s "$BASE_URL/api/screening-sessions/$session_id/next-question")
+      if ! echo "$nq" | grep -q '"hasNextQuestion"[[:space:]]*:[[:space:]]*true'; then
+        break
+      fi
+
+      qid=$(extract_field "$nq" "questionId")
+      answer_type=$(extract_field "$nq" "answerType")
+      if [ -z "$qid" ]; then
+        break
+      fi
+
+      # The first canTriggerEarlyStop question with a numeric answer type is the
+      # age-vs-required-range case: answer with a disqualifying value and confirm
+      # the backend (not just the yes/no heuristic) recommends stopping.
+      if echo "$nq" | grep -q '"canTriggerEarlyStop"[[:space:]]*:[[:space:]]*true' && [ "$answer_type" = "number" ]; then
+        ans_response=$(curl -s -X POST "$BASE_URL/api/screening-sessions/$session_id/answers" \
+          -H "Content-Type: application/json" \
+          -d "{\"questionId\":\"$qid\",\"response\":\"16\"}")
+        if echo "$ans_response" | grep -q '"earlyStopRecommended"[[:space:]]*:[[:space:]]*true'; then
+          echo "[PASS] Disqualifying numeric answer (16) returns earlyStopRecommended=true"
+          PASS=$((PASS + 1))
+        else
+          echo "[FAIL] earlyStopRecommended was not true after a disqualifying numeric answer: $ans_response"
+          FAIL=$((FAIL + 1))
+        fi
+        early_stop_checked=true
+        break
+      fi
+
+      default_response="N/A"
+      if [ "$answer_type" = "yes_no" ]; then
+        default_response="Yes"
+      fi
+      curl -s -X POST "$BASE_URL/api/screening-sessions/$session_id/answers" \
+        -H "Content-Type: application/json" \
+        -d "{\"questionId\":\"$qid\",\"response\":\"$default_response\"}" > /dev/null
+    done
+
+    if [ "$early_stop_checked" != "true" ]; then
+      echo "[FAIL] Could not locate a numeric canTriggerEarlyStop question within 15 answers"
+      FAIL=$((FAIL + 1))
+    fi
+
+    echo "== End session early + summary after early stop =="
+    end_response=$(curl -s -X POST "$BASE_URL/api/screening-sessions/$session_id/end")
+    if echo "$end_response" | grep -q '"status"[[:space:]]*:[[:space:]]*"Completed"'; then
+      echo "[PASS] POST /api/screening-sessions/$session_id/end"
+      PASS=$((PASS + 1))
+    else
+      echo "[FAIL] POST /api/screening-sessions/$session_id/end (unexpected response: $end_response)"
+      FAIL=$((FAIL + 1))
+    fi
+
+    code=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/api/screening-sessions/$session_id/summary")
+    check "GET /api/screening-sessions/$session_id/summary (after early end)" 200 "$code"
   else
     echo "[FAIL] POST /api/screening-sessions (no sessionId in response: $session_response)"
     FAIL=$((FAIL + 1))
