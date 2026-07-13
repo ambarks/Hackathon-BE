@@ -1,0 +1,32 @@
+CLINICAL TRIAL PROTOCOL (SAMPLE - SYNTHETIC DATA FOR DEMONSTRATION ONLY)
+
+Protocol Title: A Phase 2 Study of Investigational Drug XR-204 in Adults with Type 2 Diabetes Mellitus
+Protocol Number: SAMPLE-XR204-001
+Sponsor: Fictional Pharma Research Institute (synthetic sponsor for hackathon demo)
+
+STUDY OVERVIEW:
+This is a synthetic sample protocol created for a hackathon proof-of-concept. It describes a fictional
+Phase 2 study evaluating an investigational oral medication, XR-204, in adults with Type 2 Diabetes
+Mellitus who have inadequate glycemic control. No real patients, sites, or drugs are involved.
+
+INCLUSION CRITERIA:
+1. Male or female participants aged 18 to 75 years, inclusive, at the time of screening.
+2. Documented diagnosis of Type 2 Diabetes Mellitus for at least 6 months prior to screening.
+3. Screening HbA1c between 7.0% and 10.0%, inclusive.
+4. Participant must be willing and able to attend all study visits over the 24-week treatment period.
+5. Participant must be able to provide informed consent.
+
+EXCLUSION CRITERIA:
+1. History of Type 1 Diabetes Mellitus.
+2. Currently pregnant, breastfeeding, or planning pregnancy during the study period.
+3. Severe renal impairment, defined as estimated glomerular filtration rate (eGFR) below 30 mL/min/1.73m2.
+4. Currently receiving insulin therapy of any kind.
+5. Known hypersensitivity to the investigational drug or its excipients.
+
+VISIT SCHEDULE:
+Participants will attend a screening visit, a baseline visit, and follow-up visits at weeks 4, 8, 12,
+18, and 24. Each visit includes vital signs, blood draws, and a brief clinical assessment.
+
+INFORMED CONSENT:
+All participants must review and sign an informed consent form before any study procedures begin.
+Participants may withdraw from the study at any time without penalty.

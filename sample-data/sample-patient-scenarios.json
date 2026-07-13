@@ -1,0 +1,49 @@
+{
+  "scenarios": [
+    {
+      "scenarioId": "SCN-ELIGIBLE-001",
+      "label": "Likely Eligible",
+      "patientAlias": "Patient-Alpha",
+      "description": "A patient who meets all inclusion criteria and triggers no exclusion criteria.",
+      "expectedRecommendation": "Likely Eligible",
+      "sampleAnswers": [
+        { "criterionId": "INC-001", "topic": "Age", "response": "52", "notes": "Within 18-75 range." },
+        { "criterionId": "INC-002", "topic": "Type 2 Diabetes diagnosis duration", "response": "Yes", "notes": "Diagnosed 3 years ago." },
+        { "criterionId": "INC-003", "topic": "Recent HbA1c", "response": "Yes, within range", "notes": "Reported HbA1c 8.1%." },
+        { "criterionId": "INC-004", "topic": "Visit availability", "response": "Yes" },
+        { "criterionId": "INC-005", "topic": "Informed consent capability", "response": "Yes" },
+        { "criterionId": "EXC-001", "topic": "Type 1 Diabetes history", "response": "No" },
+        { "criterionId": "EXC-002", "topic": "Pregnancy/breastfeeding status", "response": "No", "notes": "Not applicable; male patient." },
+        { "criterionId": "EXC-003", "topic": "Severe renal impairment", "response": "No" },
+        { "criterionId": "EXC-004", "topic": "Insulin therapy", "response": "No, not taking insulin" },
+        { "criterionId": "EXC-005", "topic": "Drug hypersensitivity", "response": "No" }
+      ]
+    },
+    {
+      "scenarioId": "SCN-INELIGIBLE-001",
+      "label": "Likely Ineligible",
+      "patientAlias": "Patient-Bravo",
+      "description": "A patient who otherwise qualifies but is currently taking insulin, a high-impact exclusion criterion that quickly disqualifies them if asked early.",
+      "expectedRecommendation": "Likely Ineligible",
+      "sampleAnswers": [
+        { "criterionId": "INC-001", "topic": "Age", "response": "61" },
+        { "criterionId": "INC-002", "topic": "Type 2 Diabetes diagnosis duration", "response": "Yes" },
+        { "criterionId": "EXC-004", "topic": "Insulin therapy", "response": "Yes, taking insulin", "notes": "Disqualifying exclusion criterion triggered early." }
+      ],
+      "earlyStopNote": "Screening can end as soon as EXC-004 is answered 'Yes, taking insulin'; remaining questions are optional for the recruiter."
+    },
+    {
+      "scenarioId": "SCN-NEEDS-REVIEW-001",
+      "label": "Needs Clinical Review",
+      "patientAlias": "Patient-Charlie",
+      "description": "A patient who is uncertain about their current diabetes medications, so a medication-related exclusion criterion cannot be confidently resolved.",
+      "expectedRecommendation": "Needs Clinical Review",
+      "sampleAnswers": [
+        { "criterionId": "INC-001", "topic": "Age", "response": "45" },
+        { "criterionId": "INC-002", "topic": "Type 2 Diabetes diagnosis duration", "response": "Yes" },
+        { "criterionId": "INC-003", "topic": "Recent HbA1c", "response": "Not sure / no recent result" },
+        { "criterionId": "EXC-004", "topic": "Insulin therapy", "response": "Not sure / unsure of current medications", "notes": "Missing/uncertain medication history triggers clinical review." }
+      ]
+    }
+  ]
+}

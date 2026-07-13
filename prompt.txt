@@ -1,0 +1,1530 @@
+You are a senior full-stack engineer and solution architect. Generate a complete, working local POC application for the following hackathon idea.
+
+Project Name:
+AI-Powered Clinical Trial Patient Pre-Screening Assistant
+
+Business Context:
+Clinical Research Organizations receive clinical trial protocols from pharmaceutical sponsors. These protocols contain complex inclusion and exclusion criteria. Clinical experts manually interpret the protocol and convert criteria into screening questions for recruiters. Recruiters then call potential patients and ask many questions to determine likely eligibility.
+
+The POC should demonstrate how AI can help recruiters conduct patient pre-screening more efficiently by:
+1. Uploading a sample clinical trial protocol PDF.
+2. Extracting inclusion and exclusion criteria.
+3. Generating simple, patient-friendly screening questions.
+4. Grouping questions into two sections:
+   - Demographic Information
+   - Eligibility Criteria Questions
+5. Starting a recruiter-led screening session.
+6. Asking adaptive questions one at a time based on previous answers.
+7. Sequencing eligibility criteria questions intelligently to support faster screening.
+8. Explaining why each question is being asked and which protocol criterion or criteria it maps to.
+9. Generating a final recommendation:
+   - Likely Eligible
+   - Likely Ineligible
+   - Needs Clinical Review
+10. Providing supporting reasons, missing information, and next action.
+
+Important Positioning:
+This is a hackathon POC, not a production clinical decisioning system. The system must not make final medical, diagnostic, or recruitment decisions. It should clearly position the output as pre-screening guidance for recruiter and clinical reviewer review.
+
+The application must include the following disclaimer in the UI:
+
+“This tool provides AI-assisted pre-screening guidance only. Final eligibility must be confirmed by qualified clinical staff.”
+
+Technology Requirements:
+Create a complete working application that runs locally using Docker Compose.
+
+Use the following stack:
+- Frontend: React + Vite
+- Backend: .NET 8 Web API
+- AI reasoning: Claude API
+- Vector database: Qdrant running locally in Docker
+- Embedding service: Python FastAPI service using sentence-transformers
+- Embedding model: sentence-transformers/all-MiniLM-L6-v2
+- Database: SQL Server 2022 running inside Docker
+- ORM / data access: Entity Framework Core with SQL Server provider
+- PDF parsing: PdfPig in .NET backend
+- Orchestration: Custom backend services
+- Storage: Docker volumes and local mounted folder
+- Logging: Default .NET logging
+- Docker Compose: one command should start the full stack
+
+The application should run with:
+
+docker compose up --build
+
+Expected local URLs:
+- Frontend: http://localhost:5173
+- Backend API Swagger: http://localhost:8080/swagger
+- Backend health: http://localhost:8080/api/health
+- Backend database health: http://localhost:8080/api/health/database
+- Backend AI health: http://localhost:8080/api/health/ai
+- Qdrant: http://localhost:6333
+- Embedding service health: http://localhost:8001/health
+
+Current POC Tech Stack:
+
+Component: Backend
+Tool: .NET 8 Web API
+
+Component: AI Model
+Tool: Claude API
+
+Component: UI
+Tool: React + Vite
+
+Component: PDF Parsing
+Tool: PdfPig in .NET backend
+
+Component: Orchestration
+Tool: Custom backend services
+
+Component: Vector DB
+Tool: Qdrant local
+
+Component: Embeddings
+Tool: Sentence Transformers all-MiniLM-L6-v2 via Python FastAPI embedding service
+
+Component: Database
+Tool: SQL Server 2022 running in Docker
+
+Component: Storage
+Tool: Docker volume / local mounted folder
+
+Component: Logging
+Tool: Default .NET logging
+
+Important Database Requirement:
+SQL Server must run inside Docker as part of docker-compose.yml.
+
+Do not assume SQL Server is already running on the developer laptop.
+Do not require SQL Server Configuration Manager setup.
+Do not require enabling TCP/IP on local SQLEXPRESS as the primary path.
+
+Add a SQL Server 2022 Docker service named:
+
+sqlserver
+
+Use:
+
+image: mcr.microsoft.com/mssql/server:2022-latest
+
+The backend API container must connect to SQL Server using the Docker service name:
+
+sqlserver
+
+Use SQL Server as the primary database.
+
+Example SQL Server connection string used by backend:
+
+Server=sqlserver,1433;
+Database=ClinicalTrialPreScreening;
+User Id=sa;
+Password=${SQLSERVER_PASSWORD};
+TrustServerCertificate=True;
+Encrypt=False;
+
+The actual connection string should be configured using environment variables.
+
+Required SQL Server environment variables:
+
+SQLSERVER_HOST=sqlserver
+SQLSERVER_PORT=1433
+SQLSERVER_DATABASE=ClinicalTrialPreScreening
+SQLSERVER_USER=sa
+SQLSERVER_PASSWORD=P@ssw0rd!2026
+SQLSERVER_TRUST_CERTIFICATE=true
+SQLSERVER_ENCRYPT=false
+
+Also support an override:
+
+CONNECTION_STRING=full_sql_server_connection_string_if_user_prefers
+
+Database Behavior:
+- On startup, backend should connect to SQL Server Docker container.
+- If the database does not exist, create it automatically.
+- The application must create database tables automatically on first run.
+- Do not require manual SQL scripts for the first run.
+- Do not rely only on EF migrations because migration files may not exist in the generated POC.
+- Use Entity Framework Core with a safe initialization strategy.
+- Prefer db.Database.EnsureCreatedAsync() for this hackathon POC.
+- Alternatively, try migrations and fall back safely to EnsureCreatedAsync().
+- Seed demo data if required.
+- If SQL Server is unreachable, show a clear backend error and UI message.
+
+The application must not fail with:
+
+Invalid object name 'Protocols'
+
+The generated database schema must include tables for:
+- Protocols
+- ProtocolChunks
+- EligibilityCriteria
+- ScreeningQuestions
+- ScreeningSessions
+- ScreeningAnswers
+- ScreeningSummaries
+- AuditEvents
+
+Preferred DbInitializer.cs implementation:
+
+using Microsoft.EntityFrameworkCore;
+
+namespace ClinicalTrialPreScreening.Api.Data;
+
+public static class DbInitializer
+{
+    public static async Task EnsureSchemaAsync(AppDbContext db, ILogger logger)
+    {
+        try
+        {
+            logger.LogInformation("Ensuring database and schema are created for hackathon POC.");
+            await db.Database.EnsureCreatedAsync();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Database schema initialization failed.");
+            throw;
+        }
+    }
+}
+
+Required Docker Compose Services:
+
+1. web
+   - React + Vite frontend
+   - Port: 5173
+   - Talks to backend API
+
+2. api
+   - .NET 8 Web API
+   - Port: 8080
+   - Exposes Swagger
+   - Handles PDF upload, criteria extraction, screening sessions, Claude calls, SQL Server persistence, and exports
+   - Connects to SQL Server using SQLSERVER_HOST=sqlserver
+   - Must not expose Claude API key to frontend
+
+3. embedding-service
+   - Python FastAPI service
+   - Port: 8001
+   - Uses sentence-transformers to generate embeddings
+   - Endpoint: POST /embed
+   - Endpoint: GET /health
+
+4. qdrant
+   - Qdrant vector DB
+   - Ports: 6333 and 6334
+   - Persistent volume for vector storage
+
+5. sqlserver
+   - SQL Server 2022 container
+   - Port: 1433
+   - Persistent volume for database files
+
+Do not add:
+- PostgreSQL
+- Kubernetes configuration
+- Rancher deployment configuration
+- Cloud-hosted database dependency
+- Cloud-hosted vector database dependency
+
+SQL Server Docker Compose Requirement:
+Add this service to docker-compose.yml:
+
+sqlserver:
+  image: mcr.microsoft.com/mssql/server:2022-latest
+  container_name: clinicaltrial-sqlserver
+  environment:
+    - ACCEPT_EULA=Y
+    - MSSQL_SA_PASSWORD=${SQLSERVER_PASSWORD}
+    - MSSQL_PID=Developer
+  ports:
+    - "1433:1433"
+  volumes:
+    - sqlserver-data:/var/opt/mssql
+  networks:
+    - prescreening-net
+
+Add this volume:
+
+sqlserver-data:
+
+The api service must depend on:
+- sqlserver
+- qdrant
+- embedding-service
+
+The api service should tolerate delayed startup of SQL Server, Qdrant, and embedding-service through retry/error handling rather than permanently failing on first attempt.
+
+SQL Server Port Conflict Guidance:
+If port 1433 is already used on the host laptop, document this alternative in README.md and CODESETUP.md:
+
+ports:
+  - "11433:1433"
+
+In that case:
+- API inside Docker still connects to sqlserver,1433.
+- SSMS on the host connects to localhost,11433.
+
+Folder Structure:
+Generate the following structure:
+
+clinical-trial-prescreening-assistant/
+  docker-compose.yml
+  .env.example
+  README.md
+  DEMO.md
+  CODESETUP.md
+  smoke-test.sh
+  sample-data/
+    sample-protocol.txt
+    sample-patient-scenarios.json
+    sample-criteria.json
+    sample-question-bank.json
+  backend/
+    ClinicalTrialPreScreening.Api/
+      ClinicalTrialPreScreening.Api.csproj
+      Dockerfile
+      Program.cs
+      appsettings.json
+      Controllers/
+        ProtocolsController.cs
+        CriteriaController.cs
+        ScreeningSessionsController.cs
+        HealthController.cs
+        AiHealthController.cs
+      Services/
+        ProtocolTextExtractionService.cs
+        ProtocolChunkingService.cs
+        CriteriaExtractionService.cs
+        QuestionBankService.cs
+        ScreeningSessionService.cs
+        AdaptiveQuestionService.cs
+        ClaudeService.cs
+        AiStatusService.cs
+        EmbeddingClient.cs
+        QdrantService.cs
+        ExportService.cs
+        AuditService.cs
+        DatabaseInitializationService.cs
+      Models/
+        Protocol.cs
+        ProtocolChunk.cs
+        EligibilityCriterion.cs
+        ScreeningQuestion.cs
+        ScreeningSession.cs
+        ScreeningAnswer.cs
+        ScreeningSummary.cs
+        AuditEvent.cs
+      Data/
+        AppDbContext.cs
+        DbInitializer.cs
+        Data/Migrations/
+      Prompts/
+      Utils/
+  frontend/
+    Dockerfile
+    package.json
+    vite.config.ts
+    index.html
+    src/
+      main.tsx
+      App.tsx
+      api/
+      components/
+      pages/
+      styles/
+  embedding-service/
+    Dockerfile
+    requirements.txt
+    app/
+      main.py
+
+Backend Architecture Requirement:
+Implement the .NET backend using a clean, modular service structure.
+
+Create the following controllers:
+- ProtocolsController.cs
+- CriteriaController.cs
+- ScreeningSessionsController.cs
+- HealthController.cs
+- AiHealthController.cs
+
+Create the following services:
+- ProtocolTextExtractionService.cs
+- ProtocolChunkingService.cs
+- CriteriaExtractionService.cs
+- QuestionBankService.cs
+- ScreeningSessionService.cs
+- AdaptiveQuestionService.cs
+- ClaudeService.cs
+- AiStatusService.cs
+- EmbeddingClient.cs
+- QdrantService.cs
+- ExportService.cs
+- AuditService.cs
+- DatabaseInitializationService.cs
+
+Create the following models:
+- Protocol.cs
+- ProtocolChunk.cs
+- EligibilityCriterion.cs
+- ScreeningQuestion.cs
+- ScreeningSession.cs
+- ScreeningAnswer.cs
+- ScreeningSummary.cs
+- AuditEvent.cs
+
+Create the following data access classes:
+- AppDbContext.cs
+- DbInitializer.cs
+- EntityConfigurations if needed
+- EF Core migration files or migration placeholder documentation
+
+Backend design rules:
+- Follow this flow: Controllers → Services → Data Access / Repositories → External Clients.
+- Keep Claude API calls isolated inside ClaudeService.
+- Keep Qdrant calls isolated inside QdrantService.
+- Keep embedding service calls isolated inside EmbeddingClient.
+- Keep adaptive screening logic inside AdaptiveQuestionService.
+- Keep final recommendation logic inside ScreeningSessionService.
+- Keep PDF text extraction inside ProtocolTextExtractionService.
+- Keep protocol chunking inside ProtocolChunkingService.
+- Keep audit logging inside AuditService.
+- Keep export generation inside ExportService.
+- Keep SQL Server initialization logic inside DatabaseInitializationService or DbInitializer.
+- Do not call Claude API directly from controllers.
+- Do not call Qdrant directly from controllers.
+- Do not call the embedding service directly from controllers.
+- Do not expose Claude API key to the frontend.
+- Use dependency injection for services.
+- Use async/await for I/O operations.
+
+NuGet Package Requirements:
+Use package versions that restore successfully.
+
+Do not use:
+
+UglyToad.PdfPig 0.1.9
+
+Use:
+
+UglyToad.PdfPig 1.7.0-custom-5
+
+The .csproj should include:
+
+<PackageReference Include="UglyToad.PdfPig" Version="1.7.0-custom-5" />
+
+Also include:
+- Microsoft.EntityFrameworkCore.SqlServer compatible with .NET 8
+- Microsoft.EntityFrameworkCore.Design compatible with .NET 8
+- Swashbuckle.AspNetCore compatible with .NET 8
+
+If PdfPig restore still fails, document a fallback approach:
+- Continue demo using sample-data/sample-protocol.txt.
+- Skip PDF parsing temporarily.
+- Keep the protocol upload fallback path working.
+
+JSON Serialization Requirement:
+The backend must not fail with circular EF Core object graph serialization errors.
+
+The application must not fail with:
+
+A possible object cycle was detected.
+
+Apply one or both of the following:
+
+Option A — Global JSON cycle handling in Program.cs:
+
+using System.Text.Json.Serialization;
+
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+        options.JsonSerializerOptions.WriteIndented = true;
+    });
+
+Option B — Preferred long-term approach:
+Return DTOs or shaped anonymous response objects from controllers instead of returning EF entities with navigation properties directly.
+
+Important Question Structuring Requirement:
+The screening experience must have exactly two major question sections:
+
+1. Demographic Information
+2. Eligibility Criteria Questions
+
+Do not split the screening session into separate Inclusion Criteria and Exclusion Criteria sections.
+
+Reason:
+Separating all inclusion questions first and all exclusion questions later can waste recruiter time. For example, if the first exclusion question disqualifies the patient, it is inefficient to ask all inclusion questions before reaching it.
+
+The system must support faster screening by intelligently sequencing eligibility criteria questions across both inclusion and exclusion criteria.
+
+Functional Requirements:
+
+A. Protocol Upload
+- Recruiter uploads a sample clinical trial protocol PDF.
+- Backend extracts text from PDF using PdfPig.
+- If PDF extraction fails, allow fallback to sample protocol text from sample-data/sample-protocol.txt.
+- Store uploaded protocol metadata and extracted text in SQL Server.
+- Chunk the protocol text.
+- Store protocol chunks in SQL Server.
+- Send chunks to embedding service.
+- Store vector metadata in Qdrant.
+
+B. Criteria Extraction
+- Backend chunks protocol text.
+- Backend sends relevant protocol content to Claude API to extract criteria.
+- If Claude API fails or credits are insufficient, use sample-data/sample-criteria.json.
+- Extract output as structured JSON:
+
+{
+  "criteria": [
+    {
+      "criterionId": "INC-001",
+      "type": "Inclusion",
+      "originalText": "...",
+      "simpleMeaning": "...",
+      "patientQuestion": "...",
+      "answerType": "yes_no | single_choice | free_text | date | number",
+      "options": [],
+      "eligibilityImpact": "Required | Exclusionary | Needs Review",
+      "priority": "High | Medium | Low",
+      "sourceSection": "...",
+      "requiresClinicalReview": false,
+      "canBeCoveredByDemographics": false
+    }
+  ]
+}
+
+- Store criteria in SQL Server.
+- Show extracted criteria on frontend.
+- Allow criteria to be edited or approved in the UI.
+
+C. RAG / Protocol Retrieval
+- Backend should chunk protocol text into sections.
+- Generate embeddings by calling the local embedding-service.
+- Store vectors and metadata in Qdrant.
+- Store protocol chunks and metadata in SQL Server.
+- Metadata should include:
+  - protocolId
+  - sectionTitle
+  - chunkText
+  - pageNumber if available
+  - criterionId if associated
+
+- During explanation/question generation, retrieve relevant protocol chunks from Qdrant and pass them to Claude.
+- If Qdrant is unavailable, fall back to keyword search over protocol chunks stored in SQL Server.
+
+D. Question Bank Generation
+For each approved criterion, generate patient-friendly screening questions.
+
+The question bank must be generated into exactly two sections:
+
+1. Demographic Information
+2. Eligibility Criteria Questions
+
+Demographic Information section:
+- Must be generated first.
+- Includes basic patient/profile/logistical questions that are useful across the screening workflow.
+- Examples:
+  - Age or age range
+  - Sex at birth only if explicitly required by the protocol
+  - Pregnancy status only if relevant to the protocol
+  - Ability to provide consent
+  - Ability to attend required visits
+  - Location or travel ability if relevant
+  - General patient profile questions required to assess eligibility
+
+Eligibility Criteria Questions section:
+- Contains all remaining inclusion and exclusion criteria questions.
+- Inclusion and exclusion questions must not be separated into different UI sections.
+- The sequence must be optimized for faster screening.
+- High-impact exclusion criteria should generally be asked early if they can quickly disqualify a patient.
+- High-priority inclusion criteria may also be asked early if failure would make the patient unlikely to qualify.
+- Questions should be ordered by clinical/business screening value, not simply by inclusion first and exclusion second.
+
+Question sequencing requirements:
+- Ask demographic questions first.
+- Then ask eligibility criteria questions in an AI-recommended optimized order.
+- The optimized order should consider:
+  - High-priority exclusion criteria that can quickly disqualify the patient
+  - High-priority inclusion criteria that are essential for eligibility
+  - Criteria that are easy for the patient to answer
+  - Criteria that avoid unnecessary follow-up questions
+  - Criteria that are likely to stop the screening early
+  - Criteria that require clinical review if uncertain
+- The system must not blindly ask all inclusion criteria before exclusion criteria.
+- The system must not blindly ask all exclusion criteria before inclusion criteria either.
+- The AI or backend should produce a recommended mixed sequence for the Eligibility Criteria Questions section.
+
+De-duplication requirements:
+- If a demographic question already covers an inclusion or exclusion criterion, that criterion must not be asked again separately in the Eligibility Criteria Questions section.
+- Instead, the demographic question must store linked criteria.
+- A single demographic question may cover one or multiple criteria.
+- The answer to a demographic question must update the status of all linked criteria.
+- The final summary must still show which inclusion or exclusion criteria were covered by demographic answers.
+- The app must not ask the same information twice unless a follow-up is clinically necessary.
+
+Question data requirements:
+Every generated question must include:
+- questionId
+- section
+  - Demographics
+  - Criteria
+- questionText
+- answerType
+- options
+- priority
+- displayOrder
+- linkedCriteria
+- coveredCriteria
+- sourceCriteriaText
+- whyAsked
+- isDemographicQuestion
+- isDuplicateSuppressed
+- canTriggerEarlyStop
+- earlyStopReason if applicable
+
+Fallback question bank:
+If Claude is unavailable:
+- Use sample-data/sample-question-bank.json.
+- The fallback question bank must also have exactly two sections:
+  - Demographics
+  - Criteria
+- The fallback question bank must also avoid duplicate criteria questions.
+- The fallback question bank must include at least one demographic question that covers an eligibility criterion, such as age.
+
+E. Screening Session
+- Recruiter starts a new screening session.
+- Recruiter enters a patient alias only, not real patient identity.
+- The application asks one question at a time.
+- The UI must clearly show the current section:
+  - Demographic Information
+  - Eligibility Criteria Questions
+- The application must first ask demographic questions.
+- After demographic questions, the application must ask optimized eligibility criteria questions.
+- Recruiter records patient response.
+- Backend stores in SQL Server:
+  - sessionId
+  - questionId
+  - criterionId or linkedCriteria
+  - section
+  - question text
+  - response
+  - timestamp
+  - mapped eligibility status
+  - whether the answer covered one or more criteria
+  - whether the question was skipped because already covered by demographics
+
+F. Adaptive Next-Best Question Logic
+Implement controlled adaptive logic. Do not let the LLM randomly control the flow.
+
+Recommended logic:
+1. Ask all required demographic questions first.
+2. Use demographic answers to satisfy, fail, or flag linked inclusion/exclusion criteria.
+3. Do not ask criteria questions already covered by demographic answers.
+4. After demographics, ask eligibility criteria questions in optimized mixed order.
+5. The optimized order should mix inclusion and exclusion criteria based on screening value.
+6. High-priority exclusion criteria that can quickly disqualify the patient should generally be asked early.
+7. High-priority inclusion criteria that are essential for likely eligibility should also be asked early.
+8. If an answer clearly fails an exclusion criterion, mark likely ineligible but allow recruiter to continue or end session.
+9. If an answer clearly fails a must-have inclusion criterion, mark likely ineligible or needs review depending on criterion type.
+10. If answer is unclear, ask a follow-up question or mark Needs Clinical Review.
+11. Skip questions that are no longer relevant based on previous answers.
+12. If required information is missing, mark as Needs Clinical Review.
+13. Keep deterministic screening state in backend.
+
+The backend must maintain deterministic screening state:
+- Criteria satisfied
+- Criteria failed
+- Criteria needing review
+- Criteria unanswered
+- Criteria covered by demographic questions
+- Criteria skipped due to de-duplication
+- Criteria skipped due to adaptive logic
+- Current section
+- Section progress
+- Overall likely status
+
+G. Claude Usage
+Use Claude API only from backend, never from frontend.
+
+Use Claude for:
+- Criteria extraction
+- Simplifying clinical language
+- Generating patient-friendly questions
+- Recommending optimized mixed sequencing of eligibility criteria questions
+- Explaining why a question is being asked
+- Summarizing the screening session
+- Highlighting missing or uncertain information
+
+Do not use Claude as the only decision engine.
+
+The backend must maintain explicit rules/state for:
+- satisfied criteria
+- failed criteria
+- unanswered criteria
+- needs review reasons
+- criteria covered by demographic questions
+- skipped duplicate criteria
+- early-stop candidates
+
+Prompt Guardrails:
+Every Claude prompt must include:
+- This is a clinical trial pre-screening assistant.
+- Do not make final medical, diagnostic, or recruitment decisions.
+- Use only the provided protocol text, criteria, and patient responses.
+- If information is missing or uncertain, say so.
+- Return valid JSON where requested.
+- Keep patient-facing wording simple.
+- The final decision remains with recruiter/clinical reviewer.
+- Generate exactly two question sections: Demographics and Criteria.
+- Do not generate separate Inclusion and Exclusion sections.
+- Optimize Criteria question order for faster screening.
+- Avoid duplicate questions if a demographic answer already covers the criterion.
+
+Claude prompt for question generation must instruct the model:
+
+Generate a sectioned question bank from the approved eligibility criteria.
+
+Sections:
+1. Demographics
+2. Criteria
+
+Rules:
+- Put age, pregnancy status when relevant, sex-at-birth when explicitly required, visit availability, consent capability, and other patient profile/logistical questions under Demographics.
+- If a demographic question covers an inclusion or exclusion criterion, do not generate another duplicate question under Criteria.
+- Return linkedCriteria for each question.
+- Return coveredCriteria for demographic questions.
+- Return suppressedDuplicateCriteria for criteria that should not be asked separately.
+- For the Criteria section, mix inclusion and exclusion criteria based on fastest screening value.
+- Do not ask all inclusion criteria first.
+- Do not ask all exclusion criteria first.
+- Ask high-impact disqualifying questions early when appropriate.
+- Keep patient-facing questions short, simple, and conversational.
+- Return valid JSON only.
+
+Expected JSON structure:
+
+{
+  "sections": [
+    {
+      "section": "Demographics",
+      "displayOrder": 1,
+      "questions": [
+        {
+          "questionId": "DEM-001",
+          "questionText": "...",
+          "answerType": "yes_no | single_choice | free_text | date | number",
+          "options": [],
+          "priority": "High | Medium | Low",
+          "displayOrder": 1,
+          "linkedCriteria": ["INC-001"],
+          "coveredCriteria": ["INC-001"],
+          "whyAsked": "...",
+          "isDemographicQuestion": true,
+          "isDuplicateSuppressed": false,
+          "canTriggerEarlyStop": false,
+          "earlyStopReason": ""
+        }
+      ]
+    },
+    {
+      "section": "Criteria",
+      "displayOrder": 2,
+      "questions": [
+        {
+          "questionId": "CRT-001",
+          "questionText": "...",
+          "answerType": "yes_no | single_choice | free_text | date | number",
+          "options": [],
+          "priority": "High | Medium | Low",
+          "displayOrder": 1,
+          "linkedCriteria": ["EXC-001"],
+          "coveredCriteria": [],
+          "whyAsked": "...",
+          "isDemographicQuestion": false,
+          "isDuplicateSuppressed": false,
+          "canTriggerEarlyStop": true,
+          "earlyStopReason": "A Yes answer may indicate likely ineligibility due to exclusion criterion EXC-001."
+        }
+      ]
+    }
+  ],
+  "suppressedDuplicateCriteria": [
+    {
+      "criterionId": "INC-001",
+      "coveredByQuestionId": "DEM-001",
+      "reason": "Age was already asked in the Demographics section."
+    }
+  ],
+  "sequencingRationale": "Demographics are asked first. Criteria questions are then ordered to ask high-impact disqualifying or essential eligibility questions early."
+}
+
+Claude API Defensive Error Handling:
+ClaudeService.SendAsync must defensively handle error responses from Anthropic API.
+
+The service must not assume the response always contains:
+
+content[0].text
+
+Claude API can return error JSON such as:
+
+{
+  "type": "error",
+  "error": {
+    "type": "invalid_request_error",
+    "message": "Your credit balance is too low to access the Anthropic API."
+  }
+}
+
+ClaudeService.SendAsync must:
+- Check HTTP status before parsing content.
+- Log non-success responses.
+- Detect insufficient credit errors.
+- Return null instead of throwing exceptions.
+- Allow fallback mode to continue.
+- Use TryGetProperty instead of GetProperty for optional response fields.
+- Never throw KeyNotFoundException when Claude returns an error response.
+
+Required behavior:
+If Claude returns an error, the API must not crash.
+The application should fall back to sample criteria / rule-based explanation.
+
+Required log message for insufficient credits:
+
+Claude API configured but API call failed due to insufficient credits. Running in fallback mode.
+
+H. AI Status Tracking
+Add a service:
+
+AiStatusService.cs
+
+It should track:
+- ClaudeConfigured
+- LastCallSucceeded
+- RunningInFallbackMode
+- LastError
+- LastStatusMessage
+- LastCheckedAt
+
+Register it as singleton:
+
+builder.Services.AddSingleton<AiStatusService>();
+
+Add a health/status endpoint:
+
+GET /api/health/ai
+
+It should return:
+
+{
+  "claudeConfigured": true,
+  "model": "claude-3-5-sonnet-latest",
+  "lastCallSucceeded": false,
+  "runningInFallbackMode": true,
+  "lastStatusMessage": "Claude API configured but API call failed due to insufficient credits. Running in fallback mode.",
+  "lastCheckedAt": "..."
+}
+
+I. Frontend Claude Fallback Banner
+The React UI must call:
+
+GET /api/health/ai
+
+Show a warning banner if:
+
+runningInFallbackMode = true
+
+Banner text:
+
+Claude API configured but API call failed due to insufficient credits. Running in fallback mode.
+
+Also show a fallback banner when Claude API key is missing:
+
+Claude API key is not configured. Running in local fallback demo mode.
+
+Add CSS:
+
+.warning {
+  padding: 12px 14px;
+  background: #fff8e8;
+  border: 1px solid #f7b731;
+  color: #14345e;
+  border-radius: 12px;
+  font-weight: 700;
+  margin: 12px 0;
+}
+
+The UI must refresh AI status after:
+- Criteria extraction
+- Question bank generation
+- Summary generation
+
+J. Final Recommendation
+Generate final summary with:
+
+{
+  "recommendation": "Likely Eligible | Likely Ineligible | Needs Clinical Review",
+  "summary": "...",
+  "demographicSummary": [],
+  "criteriaSummary": [],
+  "criteriaCoveredByDemographics": [],
+  "satisfiedCriteria": [],
+  "failedCriteria": [],
+  "needsReviewCriteria": [],
+  "skippedCriteria": [],
+  "missingInformation": [],
+  "reasoning": [],
+  "recommendedNextAction": "...",
+  "disclaimer": "This is AI-assisted pre-screening guidance. Final eligibility must be confirmed by qualified clinical staff."
+}
+
+The final summary must show:
+1. Demographic Information Summary
+   - Demographic questions answered
+   - Criteria covered by demographic answers
+
+2. Eligibility Criteria Summary
+   - Criteria satisfied
+   - Criteria failed
+   - Criteria needing review
+   - Criteria skipped because already covered by demographics
+   - Criteria skipped due to adaptive logic
+
+3. Overall Recommendation
+   - Likely Eligible
+   - Likely Ineligible
+   - Needs Clinical Review
+
+4. Reasoning
+   - Plain-language explanation
+   - Supporting answers
+   - Missing or uncertain information
+
+5. Responsible AI disclaimer
+
+Store the final recommendation in SQL Server.
+
+K. Frontend Screens
+Create clean, simple screens:
+
+1. Home / Workflow Dashboard
+   - Shows steps:
+     Upload Protocol → Extract Criteria → Review Criteria → Start Screening → Summary
+
+2. Protocol Upload Page
+   - Upload PDF
+   - Button: Use sample protocol
+   - Shows extraction status
+
+3. Criteria Review Page
+   - List inclusion/exclusion criteria
+   - Show original text, simple meaning, patient question, priority
+   - Allow approve/edit/delete
+   - Button: Generate question bank
+
+4. Question Bank Preview
+   - Show exactly two sections:
+     - Demographic Information
+     - Eligibility Criteria Questions
+   - Show linked criteria for each question
+   - Show criteria covered by demographic questions
+   - Show suppressed duplicate criteria
+   - Show AI sequencing rationale for Criteria questions
+
+5. Screening Session Page
+   - Start session
+   - Show current section:
+     - Demographic Information
+     - Eligibility Criteria Questions
+   - Show section progress, for example:
+     Demographic Information: Question 2 of 5
+     Eligibility Criteria Questions: Question 3 of 10
+   - Show current question
+   - Input answer
+   - Show “Why is this asked?”
+   - Show mapped criterion or criteria
+   - If the question is a demographic question covering inclusion/exclusion criteria, show:
+     “This demographic question also covers the following eligibility criteria: ...”
+   - Button: Next Question
+   - Button: End and Generate Summary
+
+The UI must clearly separate questions into only two sections:
+- Demographic Information
+- Eligibility Criteria Questions
+
+The UI must not split Eligibility Criteria Questions into separate Inclusion and Exclusion sections.
+
+6. Summary Page
+   - Show recommendation
+   - Show demographic answers
+   - Show criteria covered by demographics
+   - Show satisfied criteria
+   - Show failed criteria
+   - Show missing / needs review criteria
+   - Show skipped criteria
+   - Show reasoning
+   - Show next action
+   - Export summary as JSON and CSV
+
+7. Status / Banner Area
+   - Show Claude fallback status
+   - Show API or database errors where useful
+   - Show responsible AI disclaimer
+
+Backend API Endpoints:
+Implement these endpoints exactly.
+
+Protocol:
+POST /api/protocols/upload
+POST /api/protocols/use-sample
+GET /api/protocols
+GET /api/protocols/{protocolId}
+POST /api/protocols/{protocolId}/extract-criteria
+
+Criteria:
+GET /api/protocols/{protocolId}/criteria
+PUT /api/criteria/{criterionId}
+POST /api/protocols/{protocolId}/criteria/approve
+POST /api/protocols/{protocolId}/generate-question-bank
+
+Question Bank:
+GET /api/protocols/{protocolId}/questions
+GET /api/protocols/{protocolId}/questions/sections
+
+Screening:
+POST /api/screening-sessions
+GET /api/screening-sessions/{sessionId}
+GET /api/screening-sessions/{sessionId}/next-question
+GET /api/screening-sessions/{sessionId}/current-section
+GET /api/screening-sessions/{sessionId}/section-progress
+POST /api/screening-sessions/{sessionId}/answers
+GET /api/screening-sessions/{sessionId}/summary
+GET /api/screening-sessions/{sessionId}/export/json
+GET /api/screening-sessions/{sessionId}/export/csv
+
+Health:
+GET /api/health
+GET /api/health/database
+GET /api/health/ai
+
+Endpoint behavior:
+GET /api/protocols/{protocolId}/questions/sections should return questions grouped by:
+- demographics
+- criteria
+
+Example response:
+
+{
+  "demographics": [],
+  "criteria": []
+}
+
+Demo Data:
+Include sample-data/sample-protocol.txt with a short mock clinical trial protocol for demo.
+
+Include sample-data/sample-patient-scenarios.json with 3 mock patient response scenarios:
+1. Likely eligible
+2. Likely ineligible because of exclusion criterion
+3. Needs clinical review due to missing/uncertain medication history
+
+Include sample-data/sample-criteria.json and sample-data/sample-question-bank.json for fallback demo mode.
+
+sample-data/sample-question-bank.json must include exactly two sections:
+- Demographics
+- Criteria
+
+The sample question bank must include:
+- Demographic questions
+- Mixed eligibility criteria questions
+- Examples where a demographic question covers an inclusion or exclusion criterion
+- Suppressed duplicate criteria examples
+
+Example:
+- Age question appears only under Demographics.
+- Age-related inclusion criterion is marked as covered by the demographic question and does not appear again under Criteria.
+
+Do not include real patient data.
+
+Docker and Local Run Requirements:
+Create:
+- docker-compose.yml
+- Dockerfile for frontend
+- Dockerfile for backend
+- Dockerfile for embedding-service
+- .env.example
+- README.md
+- DEMO.md
+- CODESETUP.md
+- smoke-test.sh
+
+README.md must include:
+1. Prerequisites
+2. How Docker SQL Server is configured
+3. How to create .env
+4. How to configure Claude key
+5. How to run:
+   docker compose up --build
+6. URLs to open
+7. How to use sample protocol
+8. How to run a demo screening session
+9. How the two-section question flow works:
+   - Demographics first
+   - Criteria questions in optimized mixed order
+10. How duplicate criteria questions are suppressed if already covered by demographics
+11. How to stop:
+    docker compose down
+12. How to reset all data:
+    docker compose down -v
+13. How to connect to SQL Server Docker container from SSMS
+14. Troubleshooting:
+    - Claude API key missing
+    - Claude insufficient credits
+    - SQL Server container not ready
+    - Failed to open explicitly specified database
+    - Invalid object name 'Protocols'
+    - JSON object cycle error
+    - Qdrant not reachable
+    - Embedding model first-run delay
+    - PDF extraction failure fallback
+    - Port conflicts
+    - Corporate proxy issues
+
+Environment Variables:
+Create .env.example with:
+
+ANTHROPIC_API_KEY=replace_with_your_claude_api_key
+ANTHROPIC_MODEL=claude-3-5-sonnet-latest
+
+ASPNETCORE_ENVIRONMENT=Development
+API_PORT=8080
+WEB_PORT=5173
+
+VITE_API_BASE_URL=http://localhost:8080
+
+QDRANT_URL=http://qdrant:6333
+EMBEDDING_SERVICE_URL=http://embedding-service:8001
+
+SQLSERVER_HOST=sqlserver
+SQLSERVER_PORT=1433
+SQLSERVER_DATABASE=ClinicalTrialPreScreening
+SQLSERVER_USER=sa
+SQLSERVER_PASSWORD=P@ssw0rd!2026
+SQLSERVER_TRUST_CERTIFICATE=true
+SQLSERVER_ENCRYPT=false
+
+CONNECTION_STRING=
+
+UPLOAD_DIR=/app/data/uploads
+EXPORT_DIR=/app/data/exports
+
+USE_FALLBACK_DEMO_MODE=false
+
+Error Handling:
+Implement clear error handling:
+- Missing Claude API key
+- Claude API failure
+- Claude insufficient credits
+- Invalid JSON from Claude
+- Missing content field in Claude response
+- SQL Server unavailable
+- SQL Server login failure
+- Failed to open explicitly specified database
+- Database creation failure
+- Missing database tables
+- Qdrant unavailable
+- Embedding service unavailable
+- PDF parsing failure
+- Empty protocol text
+- No approved criteria
+- No remaining questions
+- JSON object cycle response issue
+
+Fallback Behavior:
+- If Claude API key is missing, use sample criteria and show fallback banner.
+- If Claude API fails during criteria extraction, use sample criteria from sample-data.
+- If Claude API fails because credits are insufficient, show the insufficient credits fallback banner.
+- If Claude API fails during explanation, return rule-based explanation.
+- If Claude cannot generate optimized sequencing, use backend deterministic sequencing:
+  - Demographics first
+  - Then high-impact exclusion criteria and essential inclusion criteria mixed by priority
+- If vector search fails, use protocol text chunks from SQL Server.
+- If PDF upload fails, allow sample protocol fallback.
+- If SQL Server is unavailable, show a clear error.
+- Do not crash the application when any external service fails.
+
+Security and Responsible AI:
+- Never expose Claude API key to frontend.
+- Do not log Claude API key.
+- Do not log SQL Server password.
+- Do not use real patient data.
+- Add UI disclaimer:
+  “This tool provides AI-assisted pre-screening guidance only. Final eligibility must be confirmed by qualified clinical staff.”
+- Store prompt version and model name with each AI-generated output where practical.
+- Add basic audit trail in SQL Server for:
+  - protocol upload
+  - criteria extraction
+  - criteria approval
+  - question bank generation
+  - question de-duplication
+  - screening answers
+  - generated summary
+
+Docker Compose Reliability:
+Add health checks for:
+- api
+- web
+- qdrant
+- embedding-service
+- sqlserver where practical
+
+Use depends_on with health conditions where appropriate.
+
+The API service should tolerate delayed startup of SQL Server, Qdrant, or embedding-service and retry or return clear recoverable errors instead of failing permanently.
+
+Platform Compatibility:
+The generated Docker setup should work on:
+- macOS Apple Silicon
+- macOS Intel
+- Windows with Docker Desktop
+- Linux with Docker Engine
+
+Avoid hardcoding linux/amd64 unless absolutely required.
+Use CPU-based embedding models only.
+Do not require GPU.
+
+Corporate Network / Proxy Considerations:
+Document in README and CODESETUP.md how to configure HTTP_PROXY, HTTPS_PROXY, and NO_PROXY if required.
+
+NO_PROXY should include:
+
+localhost,127.0.0.1,sqlserver,qdrant,embedding-service,api,web
+
+Demo Script:
+Include a DEMO.md file with a step-by-step demo script and expected outcomes for:
+1. Likely Eligible
+2. Likely Ineligible
+3. Needs Clinical Review
+
+The demo script must show:
+- Demographic questions first
+- Criteria questions in mixed optimized order
+- An example where demographic answer covers a criterion and suppresses duplicate question
+- An example where an early criteria question quickly identifies likely ineligibility
+
+Smoke Test:
+Include simple curl commands or a smoke-test script to verify:
+- Backend health endpoint
+- Backend database health endpoint
+- Backend AI health endpoint
+- Embedding service health endpoint
+- Qdrant endpoint
+- Sample protocol loading
+- Fallback criteria extraction
+- Question sections endpoint
+- Screening next-question endpoint
+
+CODESETUP.md Requirements:
+In addition to README.md and DEMO.md, create a separate file named CODESETUP.md at the root of the project.
+
+CODESETUP.md must provide clear, detailed, step-by-step instructions for setting up the codebase and local development environment.
+
+CODESETUP.md must include the following sections:
+
+1. Purpose of this document
+   - Explain that CODESETUP.md is intended for developers who want to run, debug, modify, and extend the POC locally.
+
+2. Prerequisites
+   Include required and optional tools:
+   - Docker Desktop or Rancher Desktop
+   - Docker Compose v2
+   - Git
+   - Claude / Anthropic API key
+   - Visual Studio Code / Cursor / Rider
+   - Optional: .NET 8 SDK
+   - Optional: Node.js 20 LTS
+   - Optional: Python 3.11
+   - Optional: SQL Server Management Studio / Azure Data Studio
+   - Optional: Postman / Bruno
+   - Optional: jq
+
+3. Verify local tools
+   Provide commands:
+   docker --version
+   docker compose version
+   git --version
+   dotnet --version
+   node --version
+   python3 --version
+
+   Clearly mention that .NET, Node, and Python are optional if the user only runs through Docker Compose.
+
+4. SQL Server Docker setup
+   Explain:
+   - SQL Server runs inside Docker.
+   - API connects to sqlserver,1433.
+   - SSMS can connect to localhost,1433 if host port 1433 is available.
+   - If port 1433 is already used, map localhost,11433 to container port 1433.
+   - API still uses sqlserver,1433 internally.
+
+5. Project structure
+   Explain the purpose of each major folder:
+   - frontend/
+   - backend/
+   - embedding-service/
+   - sample-data/
+   - docker-compose.yml
+   - .env.example
+   - README.md
+   - DEMO.md
+   - CODESETUP.md
+
+6. Environment configuration
+   Explain how to create the .env file:
+   cp .env.example .env
+
+   Explain each important environment variable:
+   - ANTHROPIC_API_KEY
+   - ANTHROPIC_MODEL
+   - VITE_API_BASE_URL
+   - QDRANT_URL
+   - EMBEDDING_SERVICE_URL
+   - SQLSERVER_HOST
+   - SQLSERVER_PORT
+   - SQLSERVER_DATABASE
+   - SQLSERVER_USER
+   - SQLSERVER_PASSWORD
+   - CONNECTION_STRING
+   - USE_FALLBACK_DEMO_MODE
+
+   Clearly mention that Claude API key must never be committed to source control.
+
+7. First-time setup and run
+   Provide exact command:
+   docker compose up --build
+
+   Mention expected first-run behavior:
+   - Docker images are built
+   - SQL Server container starts
+   - Python embedding model may take time to download
+   - Backend connects to SQL Server
+   - Backend creates database and schema if missing
+   - Qdrant starts locally
+   - Frontend starts on port 5173
+
+8. Application URLs
+   List:
+   Frontend: http://localhost:5173
+   Backend Swagger: http://localhost:8080/swagger
+   Backend health: http://localhost:8080/api/health
+   Backend database health: http://localhost:8080/api/health/database
+   Backend AI health: http://localhost:8080/api/health/ai
+   Qdrant: http://localhost:6333
+   Embedding service health: http://localhost:8001/health
+
+9. Local development outside Docker
+   Provide optional instructions for developers who want to run services individually.
+   Docker Compose remains the recommended run method for the hackathon.
+
+10. Database initialization
+   Explain:
+   - Where AppDbContext is located
+   - How EnsureCreatedAsync creates schema automatically
+   - How to reset the database using docker compose down -v
+   - How to inspect data using SSMS or Azure Data Studio
+   - How to troubleshoot Invalid object name 'Protocols'
+   - Do not use production or sensitive databases
+
+11. Working with sample data
+   Explain:
+   - Where sample protocol is located
+   - Where sample criteria and question bank fallback files are located
+   - Where sample patient scenarios are located
+   - How to use the sample protocol from the UI
+
+12. Question section and sequencing design
+   Explain:
+   - The app has exactly two sections:
+     - Demographic Information
+     - Eligibility Criteria Questions
+   - Inclusion and exclusion are not separated into different UI sections.
+   - Demographic answers can cover inclusion or exclusion criteria.
+   - Covered criteria should not be asked again.
+   - Criteria questions are mixed and ordered for faster screening.
+   - High-impact disqualifying questions may be asked early.
+
+13. Running the demo flow
+   Include:
+   - Start app
+   - Open frontend
+   - Load sample protocol
+   - Extract criteria
+   - Approve criteria
+   - Generate question bank
+   - Review Demographics and Criteria sections
+   - Start screening session
+   - Answer demographic questions
+   - Answer optimized criteria questions
+   - Generate final summary
+   - Export summary
+
+14. Troubleshooting
+   Include clear troubleshooting steps for:
+   - Docker not running
+   - docker compose command not found
+   - Port 5173 already in use
+   - Port 8080 already in use
+   - Port 1433 already in use
+   - Port 6333 already in use
+   - SQL Server container startup delay
+   - SQL Server login failure
+   - Failed to open explicitly specified database
+   - Invalid object name 'Protocols'
+   - SQL certificate / encryption issue
+   - Claude API key missing
+   - Claude API insufficient credits
+   - Claude API response missing content
+   - Corporate proxy issue
+   - Qdrant startup issue
+   - Embedding model download delay
+   - PDF parsing failure
+   - Frontend cannot reach backend API
+   - JSON object cycle error
+
+15. Corporate proxy setup
+   Include guidance for proxy variables:
+   HTTP_PROXY=
+   HTTPS_PROXY=
+   NO_PROXY=localhost,127.0.0.1,sqlserver,qdrant,embedding-service,api,web
+
+16. Useful commands
+   Include:
+   docker compose up --build
+   docker compose up
+   docker compose down
+   docker compose down -v
+   docker compose logs -f api
+   docker compose logs -f web
+   docker compose logs -f embedding-service
+   docker compose logs -f qdrant
+   docker compose logs -f sqlserver
+   docker compose restart api
+   docker ps
+   docker system prune
+
+17. Connecting to SQL Server from SSMS
+   Explain:
+   - If host port 1433 is mapped:
+     Server name: localhost,1433
+   - If host port 11433 is mapped:
+     Server name: localhost,11433
+   - Authentication: SQL Server Authentication
+   - Login: sa
+   - Password: value from SQLSERVER_PASSWORD
+   - Enable Trust Server Certificate if prompted
+
+18. Developer notes
+   Explain:
+   - Frontend must not call Claude API directly
+   - Claude API key must stay in backend only
+   - Controllers should not directly call Claude, Qdrant, or embedding service
+   - ClaudeService handles Claude calls
+   - AiStatusService tracks AI/fallback status
+   - QdrantService handles vector DB calls
+   - EmbeddingClient handles embedding service calls
+   - AdaptiveQuestionService handles next-question logic
+   - ScreeningSessionService handles screening state and final summary
+   - AuditService records important actions
+
+19. Known hackathon simplifications
+   Clearly list:
+   - Sample protocol only
+   - Synthetic patient scenarios only
+   - SQL Server Docker instead of enterprise database
+   - Local Qdrant
+   - No authentication
+   - Simplified PDF parsing
+   - Limited clinical validation
+   - Rule-based fallback when Claude is unavailable
+   - EnsureCreatedAsync used for schema creation instead of production-grade migrations
+
+20. Safety and Responsible AI reminder
+   Add:
+   This application is a hackathon proof of concept. It provides AI-assisted pre-screening guidance only. It must not be used for real patient recruitment, clinical decision-making, diagnosis, treatment, or final eligibility determination. Final eligibility must be confirmed by qualified clinical staff.
+
+Acceptance Criteria:
+The generated POC is complete only if:
+
+1. Running docker compose up --build starts all containerized services.
+2. docker-compose.yml includes web, api, embedding-service, qdrant, and sqlserver.
+3. Frontend opens at http://localhost:5173.
+4. Backend Swagger opens at http://localhost:8080/swagger.
+5. Qdrant is reachable at http://localhost:6333.
+6. Embedding service health works at http://localhost:8001/health.
+7. Backend can connect to SQL Server using SQLSERVER_HOST=sqlserver.
+8. Backend creates database and schema automatically.
+9. App does not fail with Invalid object name 'Protocols'.
+10. App does not fail with JSON object cycle serialization errors.
+11. User can upload or load sample protocol.
+12. User can extract criteria.
+13. User can review/approve criteria.
+14. User can generate question bank.
+15. Question bank has exactly two sections:
+    - Demographics
+    - Criteria
+16. Screening session UI has exactly two sections:
+    - Demographic Information
+    - Eligibility Criteria Questions
+17. Inclusion and exclusion criteria are not shown as separate screening sections.
+18. Demographic questions are asked first.
+19. Criteria questions are sequenced in optimized mixed order across inclusion and exclusion criteria.
+20. A criterion covered by a demographics question is not repeated as a separate criteria question.
+21. One question can map to multiple criteria.
+22. User can start a screening session.
+23. User can answer adaptive questions.
+24. User can view why each question is asked.
+25. “Why is this asked?” shows criterion mapping even when the question is in the Demographic Information section.
+26. User can generate final recommendation.
+27. Final summary clearly shows:
+    - demographic answers
+    - criteria covered by demographics
+    - criteria status
+    - skipped criteria
+    - reasoning
+28. User can export summary.
+29. Application still works in fallback mode if Claude extraction fails.
+30. README instructions are accurate.
+31. DEMO.md exists and includes 3 demo scenarios.
+32. CODESETUP.md exists and includes detailed local setup instructions.
+33. Backend contains the required controller, service, model, and data structure listed above.
+34. ClaudeService, AiStatusService, QdrantService, EmbeddingClient, AdaptiveQuestionService, ScreeningSessionService, DatabaseInitializationService, and AuditService are implemented as separate services.
+35. Controllers do not directly call Claude API, Qdrant, embedding service, or raw SQL.
+36. Claude API key is never visible in frontend code or browser network calls.
+37. SQL Server password is never logged.
+38. ClaudeService handles Anthropic error responses without throwing KeyNotFoundException.
+39. If Claude API credits are insufficient, the app continues in fallback mode.
+40. UI shows:
+    Claude API configured but API call failed due to insufficient credits. Running in fallback mode.
+41. /api/health/ai returns Claude configuration and fallback status.
+42. PdfPig package restore works and does not use unavailable version 0.1.9.
+43. Documentation explains how to connect to Docker SQL Server from SSMS.
+44. smoke-test.sh verifies health endpoints, sample protocol loading, question sections endpoint, and fallback criteria extraction.
+
+Deliverable Format:
+Generate the complete codebase.
+
+Do not provide only snippets.
+Do not skip Dockerfiles.
+Do not skip docker-compose.yml.
+Do not skip README.md.
+Do not skip DEMO.md.
+Do not skip CODESETUP.md.
+Do not skip smoke-test.sh.
+Do not use placeholder methods for core flows.
+For any unavoidable simplification, clearly mark it in README.md and CODESETUP.md as a hackathon simplification.
+
+Prioritize a working end-to-end demo over advanced styling. If any feature is too complex, implement a simple but functional version and document the simplification in README.md.
+
+Please now generate the full project using these updated requirements.

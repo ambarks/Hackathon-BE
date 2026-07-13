@@ -1,0 +1,173 @@
+{
+  "sections": [
+    {
+      "section": "Demographics",
+      "displayOrder": 1,
+      "questions": [
+        {
+          "questionId": "DEM-001",
+          "questionText": "What is your current age?",
+          "answerType": "number",
+          "options": [],
+          "priority": "High",
+          "displayOrder": 1,
+          "linkedCriteria": ["INC-001"],
+          "coveredCriteria": ["INC-001"],
+          "whyAsked": "The study requires participants to be between 18 and 75 years old.",
+          "isDemographicQuestion": true,
+          "isDuplicateSuppressed": false,
+          "canTriggerEarlyStop": true,
+          "earlyStopReason": "An age outside 18-75 means the patient does not meet inclusion criterion INC-001."
+        },
+        {
+          "questionId": "DEM-002",
+          "questionText": "Are you currently pregnant, breastfeeding, or planning to become pregnant during the study period?",
+          "answerType": "yes_no",
+          "options": [],
+          "priority": "High",
+          "displayOrder": 2,
+          "linkedCriteria": ["EXC-002"],
+          "coveredCriteria": ["EXC-002"],
+          "whyAsked": "The study excludes patients who are pregnant, breastfeeding, or planning pregnancy.",
+          "isDemographicQuestion": true,
+          "isDuplicateSuppressed": false,
+          "canTriggerEarlyStop": true,
+          "earlyStopReason": "A 'Yes' answer means the patient is likely ineligible due to exclusion criterion EXC-002."
+        },
+        {
+          "questionId": "DEM-003",
+          "questionText": "Are you able to understand and provide informed consent for this study?",
+          "answerType": "yes_no",
+          "options": [],
+          "priority": "High",
+          "displayOrder": 3,
+          "linkedCriteria": ["INC-005"],
+          "coveredCriteria": ["INC-005"],
+          "whyAsked": "Participants must be able to provide informed consent before joining the study.",
+          "isDemographicQuestion": true,
+          "isDuplicateSuppressed": false,
+          "canTriggerEarlyStop": true,
+          "earlyStopReason": "A 'No' answer means the patient cannot meet inclusion criterion INC-005."
+        },
+        {
+          "questionId": "DEM-004",
+          "questionText": "Are you able to attend study visits regularly over a 24-week period?",
+          "answerType": "yes_no",
+          "options": [],
+          "priority": "Medium",
+          "displayOrder": 4,
+          "linkedCriteria": ["INC-004"],
+          "coveredCriteria": ["INC-004"],
+          "whyAsked": "The study requires attendance at all visits across a 24-week treatment period.",
+          "isDemographicQuestion": true,
+          "isDuplicateSuppressed": false,
+          "canTriggerEarlyStop": false,
+          "earlyStopReason": ""
+        }
+      ]
+    },
+    {
+      "section": "Criteria",
+      "displayOrder": 2,
+      "questions": [
+        {
+          "questionId": "CRT-001",
+          "questionText": "Are you currently taking insulin, or are you unsure about your current diabetes medications?",
+          "answerType": "single_choice",
+          "options": ["Yes, taking insulin", "No, not taking insulin", "Not sure / unsure of current medications"],
+          "priority": "Medium",
+          "displayOrder": 1,
+          "linkedCriteria": ["EXC-004"],
+          "coveredCriteria": [],
+          "whyAsked": "Current insulin use is an exclusion criterion for this study.",
+          "isDemographicQuestion": false,
+          "isDuplicateSuppressed": false,
+          "canTriggerEarlyStop": true,
+          "earlyStopReason": "A 'Yes, taking insulin' answer may indicate likely ineligibility due to exclusion criterion EXC-004. An uncertain answer flags the case for clinical review."
+        },
+        {
+          "questionId": "CRT-002",
+          "questionText": "Have you ever been diagnosed with Type 1 Diabetes?",
+          "answerType": "yes_no",
+          "options": [],
+          "priority": "High",
+          "displayOrder": 2,
+          "linkedCriteria": ["EXC-001"],
+          "coveredCriteria": [],
+          "whyAsked": "A history of Type 1 Diabetes is an exclusion criterion for this study.",
+          "isDemographicQuestion": false,
+          "isDuplicateSuppressed": false,
+          "canTriggerEarlyStop": true,
+          "earlyStopReason": "A 'Yes' answer may indicate likely ineligibility due to exclusion criterion EXC-001."
+        },
+        {
+          "questionId": "CRT-003",
+          "questionText": "Have you been diagnosed with Type 2 Diabetes for at least 6 months?",
+          "answerType": "yes_no",
+          "options": [],
+          "priority": "High",
+          "displayOrder": 3,
+          "linkedCriteria": ["INC-002"],
+          "coveredCriteria": [],
+          "whyAsked": "The study requires a documented Type 2 Diabetes diagnosis of at least 6 months.",
+          "isDemographicQuestion": false,
+          "isDuplicateSuppressed": false,
+          "canTriggerEarlyStop": true,
+          "earlyStopReason": "A 'No' answer may indicate the patient does not meet inclusion criterion INC-002."
+        },
+        {
+          "questionId": "CRT-004",
+          "questionText": "Have you been told you have severe kidney (renal) impairment?",
+          "answerType": "single_choice",
+          "options": ["Yes", "No", "Not sure"],
+          "priority": "Medium",
+          "displayOrder": 4,
+          "linkedCriteria": ["EXC-003"],
+          "coveredCriteria": [],
+          "whyAsked": "Severe renal impairment is an exclusion criterion for this study.",
+          "isDemographicQuestion": false,
+          "isDuplicateSuppressed": false,
+          "canTriggerEarlyStop": true,
+          "earlyStopReason": "A 'Yes' answer may indicate likely ineligibility due to exclusion criterion EXC-003."
+        },
+        {
+          "questionId": "CRT-005",
+          "questionText": "Do you know your most recent HbA1c result, and was it between 7.0% and 10.0%?",
+          "answerType": "single_choice",
+          "options": ["Yes, within range", "No, outside range", "Not sure / no recent result"],
+          "priority": "Medium",
+          "displayOrder": 5,
+          "linkedCriteria": ["INC-003"],
+          "coveredCriteria": [],
+          "whyAsked": "The study requires a recent HbA1c result between 7.0% and 10.0%.",
+          "isDemographicQuestion": false,
+          "isDuplicateSuppressed": false,
+          "canTriggerEarlyStop": false,
+          "earlyStopReason": ""
+        },
+        {
+          "questionId": "CRT-006",
+          "questionText": "Do you have any known drug allergies relevant to diabetes medications?",
+          "answerType": "yes_no",
+          "options": [],
+          "priority": "Low",
+          "displayOrder": 6,
+          "linkedCriteria": ["EXC-005"],
+          "coveredCriteria": [],
+          "whyAsked": "A known hypersensitivity to the study drug or its ingredients is an exclusion criterion.",
+          "isDemographicQuestion": false,
+          "isDuplicateSuppressed": false,
+          "canTriggerEarlyStop": true,
+          "earlyStopReason": "A 'Yes' answer may indicate likely ineligibility due to exclusion criterion EXC-005."
+        }
+      ]
+    }
+  ],
+  "suppressedDuplicateCriteria": [
+    { "criterionId": "INC-001", "coveredByQuestionId": "DEM-001", "reason": "Age was already asked in the Demographics section." },
+    { "criterionId": "EXC-002", "coveredByQuestionId": "DEM-002", "reason": "Pregnancy/breastfeeding status was already asked in the Demographics section." },
+    { "criterionId": "INC-005", "coveredByQuestionId": "DEM-003", "reason": "Informed consent capability was already asked in the Demographics section." },
+    { "criterionId": "INC-004", "coveredByQuestionId": "DEM-004", "reason": "Visit availability was already asked in the Demographics section." }
+  ],
+  "sequencingRationale": "Demographics are asked first, including age, pregnancy status, consent capability, and visit availability, since these can quickly resolve or disqualify several criteria early. The Criteria section then mixes high-priority exclusion criteria (insulin use, Type 1 Diabetes history, renal impairment) with essential inclusion criteria (Type 2 Diabetes diagnosis duration, HbA1c range) so that high-impact disqualifying questions are asked before lower-priority ones, rather than grouping all inclusion criteria before all exclusion criteria."
+}

@@ -1,0 +1,23 @@
+﻿# .NET
+bin/
+obj/
+*.user
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Env
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
