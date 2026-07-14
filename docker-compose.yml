@@ -118,7 +118,7 @@ services:
       # If host port 1433 is already in use, change to "11433:1433" and see
       # README.md / CODESETUP.md for the SSMS connection alternative. The api
       # container always connects to sqlserver,1433 regardless of this mapping.
-      - "1433:1433"
+      - "11433:1433"
     volumes:
       - sqlserver-data:/var/opt/mssql
     healthcheck:
