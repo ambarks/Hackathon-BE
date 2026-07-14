@@ -1,6 +1,6 @@
 # Demo Script
 
-Three walkthroughs for the sample protocol (`sample-data/sample-protocol.txt`, a synthetic Type 2 Diabetes trial). All scenarios assume:
+Four walkthroughs for the sample protocol (`sample-data/sample-protocol.txt`, a synthetic Type 2 Diabetes trial). All scenarios assume:
 
 1. Start the stack: `docker compose up --build`, open http://localhost:5173.
 2. **Upload & Criteria** page → **Use Sample Protocol** → **Extract Criteria** → **Approve All Criteria** → **Generate Question Bank**.
@@ -8,7 +8,9 @@ Three walkthroughs for the sample protocol (`sample-data/sample-protocol.txt`, a
 
 The question bank (fallback deterministic sequencing, used automatically when Claude is unavailable) produces this order:
 
-**Demographic Information** (asked first, in this order): DEM-001 pregnancy status (covers `EXC-002`) → DEM-002 age (covers `INC-001`) → DEM-003 consent capability (covers `INC-005`) → DEM-004 visit availability (covers `INC-004`).
+**Demographic Information** (asked first, in this order): **DEM-SEX** "What sex were you assigned at birth?" (always asked first — `EXC-002` is tagged `appliesToSex: Female`, so the sex question is required to decide whether to ask it at all; see Scenario 4) → DEM-001 pregnancy status (covers `EXC-002`) → DEM-002 age (covers `INC-001`) → DEM-003 consent capability (covers `INC-005`) → DEM-004 visit availability (covers `INC-004`).
+
+Scenarios 1–3 below assume the patient answers `DEM-SEX: Female` (or any answer other than "Male") so the pregnancy question remains relevant and the walkthroughs proceed exactly as written. Scenario 4 demonstrates what happens for a male patient instead.
 
 **Eligibility Criteria Questions** (mixed inclusion/exclusion order, asked second): CRT-001 Type 1 Diabetes history (`EXC-001`, high-priority exclusion) → CRT-002 Type 2 Diabetes diagnosis duration (`INC-002`, high-priority inclusion) → CRT-003 kidney impairment (`EXC-003`) → CRT-004 insulin therapy (`EXC-004`) → CRT-005 HbA1c range (`INC-003`) → CRT-006 drug allergy (`EXC-005`).
 
@@ -20,6 +22,7 @@ Notice that a high-priority **exclusion** question (CRT-001) is asked before sev
 
 | Question | Answer |
 |---|---|
+| DEM-SEX What sex were you assigned at birth? | Female |
 | DEM-001 Pregnant/breastfeeding/planning pregnancy? | No |
 | DEM-002 Current age? | 52 |
 | DEM-003 Able to provide informed consent? | Yes |
@@ -37,6 +40,7 @@ Notice that a high-priority **exclusion** question (CRT-001) is asked before sev
 
 | Question | Answer |
 |---|---|
+| DEM-SEX What sex were you assigned at birth? | Female |
 | DEM-001 Pregnant/breastfeeding/planning pregnancy? | No |
 | DEM-002 Current age? | 61 |
 | DEM-003 Able to provide informed consent? | Yes |
@@ -53,6 +57,7 @@ The age question (`DEM-002`, linked to `INC-001`, a Required criterion requiring
 
 | Question | Answer |
 |---|---|
+| DEM-SEX What sex were you assigned at birth? | Female |
 | DEM-001 Pregnant/breastfeeding/planning pregnancy? | No |
 | DEM-002 Current age? | **16** |
 
@@ -64,6 +69,7 @@ The age question (`DEM-002`, linked to `INC-001`, a Required criterion requiring
 
 | Question | Answer |
 |---|---|
+| DEM-SEX What sex were you assigned at birth? | Female |
 | DEM-001 Pregnant/breastfeeding/planning pregnancy? | No |
 | DEM-002 Current age? | 45 |
 | DEM-003 Able to provide informed consent? | Yes |
@@ -74,6 +80,27 @@ The age question (`DEM-002`, linked to `INC-001`, a Required criterion requiring
 | CRT-004 Currently taking insulin? | **Not sure / unsure of current medications** |
 
 **Expected outcome:** the uncertain answer to CRT-004 maps to `needs_review` rather than a clear pass/fail. Once no criterion has failed but at least one is uncertain, `overallLikelyStatus` becomes **Needs Clinical Review**. The Summary page lists `EXC-004` under "Needs review" and explains in the reasoning section that missing/uncertain medication history requires clinical confirmation before a final decision.
+
+## Scenario 4 — Sex-Specific Question Filtering (male patient)
+
+`EXC-002` (pregnancy/breastfeeding) is tagged `appliesToSex: Female` at criteria-extraction time. Because at least one approved criterion needs sex-based gating, `DEM-SEX` is generated and asked first; answering it "Male" makes `EXC-002` resolve to `not_applicable` — its dedicated pregnancy question is never shown, and it's never counted as missing information.
+
+| Question | Answer |
+|---|---|
+| DEM-SEX What sex were you assigned at birth? | **Male** |
+| DEM-002 Current age? | 52 |
+| DEM-003 Able to provide informed consent? | Yes |
+| DEM-004 Able to attend visits for 24 weeks? | Yes |
+| CRT-001 History of Type 1 Diabetes? | No |
+| CRT-002 Diagnosed with Type 2 Diabetes ≥ 6 months? | Yes |
+| CRT-003 Severe kidney impairment? | No |
+| CRT-004 Currently taking insulin? | No, not taking insulin |
+| CRT-005 Recent HbA1c 7.0–10.0%? | Yes, within range |
+| CRT-006 Known drug allergies? | No |
+
+**Expected outcome:** notice `DEM-001` (the pregnancy question) never appears in this session at all — the question list goes straight from `DEM-SEX` to `DEM-002`. The Summary page's Eligibility Criteria Summary lists `EXC-002` under **"Not applicable to this patient"**, separate from "Skipped (session ended early)" and never mentioned under missing information. `AuditEvents` records a `CriterionNotApplicable` entry. As in Scenario 1, HbA1c/insulin/kidney are `requiresClinicalReview` criteria, so the overall recommendation lands on **Needs Clinical Review** rather than Likely Eligible — that part of the outcome is unrelated to sex filtering.
+
+*Regression check: repeat this same walkthrough answering `DEM-SEX: Female` instead — `DEM-001` (pregnancy) should now appear normally, exactly as in Scenarios 1–3.*
 
 ---
 

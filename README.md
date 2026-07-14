@@ -125,6 +125,7 @@ This removes the SQL Server, Qdrant, and uploads/exports volumes, so the next `d
 - No authentication or multi-user support.
 - Rule-based/deterministic fallback logic stands in for Claude whenever it is unavailable.
 - AI-assisted early-stop evaluation (interpreting an answer against a disqualifying criterion, e.g. age vs a required range) calls Claude only for questions linked to an Exclusion or Required-Inclusion criterion, not every answer; in fallback mode it degrades to the same yes/no heuristic used elsewhere, which does not catch numeric-range cases.
+- Sex/gender-specific question filtering (e.g. not asking a male patient about pregnancy) relies on Claude tagging each criterion's `appliesToSex` at extraction time, backed by a deterministic keyword backstop covering a curated term list (pregnancy, prostate, etc.) — not exhaustive medical knowledge. An unusual sex-specific criterion phrased without any listed keyword and missed by Claude simply keeps today's default behavior (asked to everyone), never a crash.
 
 ## Responsible AI
 

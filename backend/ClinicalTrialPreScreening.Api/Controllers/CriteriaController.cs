@@ -229,6 +229,7 @@ public class CriteriaController : ControllerBase
         question.IsDuplicateSuppressed,
         question.CanTriggerEarlyStop,
         question.EarlyStopReason,
+        question.AppliesToSex,
         question.PromptVersion,
         question.ModelName);
 
@@ -261,6 +262,7 @@ public class CriteriaController : ControllerBase
             criterion.SourceSection,
             criterion.RequiresClinicalReview,
             criterion.CanBeCoveredByDemographics,
+            criterion.AppliesToSex,
             criterion.IsApproved,
             criterion.PromptVersion,
             criterion.ModelName);
@@ -290,6 +292,7 @@ public record CriterionResponse(
     string? SourceSection,
     bool RequiresClinicalReview,
     bool CanBeCoveredByDemographics,
+    string? AppliesToSex,
     bool IsApproved,
     string? PromptVersion,
     string? ModelName);
@@ -310,5 +313,6 @@ public record QuestionResponse(
     bool IsDuplicateSuppressed,
     bool CanTriggerEarlyStop,
     string? EarlyStopReason,
+    string? AppliesToSex,
     string? PromptVersion,
     string? ModelName);

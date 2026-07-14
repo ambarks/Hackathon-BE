@@ -7,7 +7,7 @@ public record CriterionState(
     string CriterionId,
     string Type,
     string EligibilityImpact,
-    string Status, // unanswered | satisfied | failed | needs_review
+    string Status, // unanswered | satisfied | failed | needs_review | not_applicable
     bool CoveredByDemographics,
     string? ResolvedByQuestionId);
 
@@ -62,6 +62,26 @@ public class AdaptiveQuestionService
             }
         }
 
+        // Deterministic sex-based relevance gating (plan3.md phase 21) — implements
+        // CLAUDE.md's documented-but-previously-unimplemented "skipped-by-adaptive-logic"
+        // status. A criterion is marked not_applicable only on a clear, confident
+        // mismatch between the patient's DEM-SEX answer and the criterion's
+        // AppliesToSex tag. An unanswered or ambiguous ("Intersex or Other") sex
+        // response never skips anything — Claude never decides this at runtime; it
+        // only tagged AppliesToSex once at extraction time (CriteriaExtractionService).
+        if (latestAnswerByQuestionId.TryGetValue(QuestionBankService.SexQuestionId, out var sexAnswer))
+        {
+            var patientSex = sexAnswer.ResponseText.Trim();
+            foreach (var criterion in allCriteria)
+            {
+                if (IsClearSexMismatch(criterion.AppliesToSex, patientSex) &&
+                    stateByCriterion.TryGetValue(criterion.CriterionId, out var mutableState))
+                {
+                    mutableState.Status = "not_applicable";
+                }
+            }
+        }
+
         var states = stateByCriterion.Values.Select(s => s.Build()).ToList();
 
         // The backend — never Claude — decides whether screening should stop:
@@ -101,6 +121,7 @@ public class AdaptiveQuestionService
 
         var remaining = allQuestions
             .Where(q => !latestAnswerByQuestionId.ContainsKey(q.QuestionId))
+            .Where(q => !IsFullyNotApplicable(q, stateByCriterion))
             .OrderBy(q => q.IsDemographicQuestion ? 0 : 1)
             .ThenBy(q => q.DisplayOrder)
             .ToList();
@@ -151,6 +172,43 @@ public class AdaptiveQuestionService
         }
 
         return status;
+    }
+
+    // Only a confident binary mismatch skips anything. "Intersex or Other", an
+    // unrecognized response, or no AppliesToSex tag at all are all conservative
+    // no-skip cases — ask/evaluate normally rather than guess.
+    private static bool IsClearSexMismatch(string? appliesToSex, string patientSex)
+    {
+        if (string.IsNullOrWhiteSpace(appliesToSex))
+        {
+            return false;
+        }
+
+        if (appliesToSex.Equals("Female", StringComparison.OrdinalIgnoreCase))
+        {
+            return patientSex.Equals("Male", StringComparison.OrdinalIgnoreCase);
+        }
+
+        if (appliesToSex.Equals("Male", StringComparison.OrdinalIgnoreCase))
+        {
+            return patientSex.Equals("Female", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
+    }
+
+    // A question is skipped only once every criterion it's linked to has been
+    // ruled not_applicable — a question covering both a sex-specific criterion
+    // and an unrelated one must still be asked for the unrelated criterion's sake.
+    private static bool IsFullyNotApplicable(ScreeningQuestion question, Dictionary<string, MutableCriterionState> stateByCriterion)
+    {
+        var linkedCriteria = JsonHelpers.DeserializeStringArray(question.LinkedCriteriaJson);
+        if (linkedCriteria.Count == 0)
+        {
+            return false;
+        }
+
+        return linkedCriteria.All(id => stateByCriterion.TryGetValue(id, out var state) && state.Status == "not_applicable");
     }
 
     public static string SummarizeStatus(IEnumerable<string> statuses)

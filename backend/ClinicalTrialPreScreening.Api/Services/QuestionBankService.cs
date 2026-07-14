@@ -22,6 +22,12 @@ public class QuestionBankService
     private const string PromptVersion = "question-bank-v1";
     private const string FallbackModelLabel = "fallback-deterministic-sequencing";
 
+    // Fixed, well-known ID so AdaptiveQuestionService (plan3.md phase 21) can
+    // reliably find the patient's sex answer at runtime regardless of whether
+    // Claude or the deterministic fallback generated the question bank.
+    public const string SexQuestionId = "DEM-SEX";
+    private static readonly string[] SexQuestionOptions = { "Female", "Male", "Intersex or Other" };
+
     private readonly ClaudeService _claudeService;
     private readonly ILogger<QuestionBankService> _logger;
 
@@ -41,7 +47,7 @@ public class QuestionBankService
 
         if (rawResponse is not null)
         {
-            var parsed = TryParseQuestionBank(rawResponse, protocolId, _claudeService.Model);
+            var parsed = TryParseQuestionBank(rawResponse, protocolId, _claudeService.Model, approvedCriteria);
             if (parsed is not null)
             {
                 return parsed;
@@ -74,15 +80,21 @@ public class QuestionBankService
             eligibilityImpact = c.EligibilityImpact,
             priority = c.Priority,
             requiresClinicalReview = c.RequiresClinicalReview,
-            canBeCoveredByDemographics = c.CanBeCoveredByDemographics
+            canBeCoveredByDemographics = c.CanBeCoveredByDemographics,
+            appliesToSex = c.AppliesToSex ?? "All"
         }));
 
         return
             "Generate a sectioned question bank from the approved eligibility criteria below.\n\n" +
             "Sections:\n1. Demographics\n2. Criteria\n\n" +
             "Rules:\n" +
-            "- Put age, pregnancy status when relevant, sex-at-birth when explicitly required, visit availability, consent capability, " +
-            "and other patient profile/logistical questions under Demographics.\n" +
+            "- Put age, visit availability, consent capability, and other patient profile/logistical questions under Demographics.\n" +
+            "- If ANY criterion below has appliesToSex of \"Male\" or \"Female\", include exactly one extra Demographics question: " +
+            "questionId \"DEM-SEX\", questionText \"What sex were you assigned at birth?\", answerType \"single_choice\", " +
+            "options [\"Female\", \"Male\", \"Intersex or Other\"], displayOrder 0 (must sort before every other question), " +
+            "linkedCriteria [], coveredCriteria []. Omit this question entirely if no criterion has appliesToSex Male or Female.\n" +
+            "- Do not generate a separate patient-facing question for a criterion whose appliesToSex a patient's DEM-SEX answer " +
+            "would make irrelevant to them — that filtering happens automatically in the backend, not in your question ordering.\n" +
             "- If a demographic question covers an inclusion or exclusion criterion, do not generate another duplicate question under Criteria.\n" +
             "- Return linkedCriteria for each question.\n" +
             "- Return coveredCriteria for demographic questions.\n" +
@@ -103,7 +115,8 @@ public class QuestionBankService
             "Approved eligibility criteria (JSON):\n" + criteriaJson;
     }
 
-    private QuestionBankResult? TryParseQuestionBank(string rawResponse, Guid protocolId, string modelName)
+    private QuestionBankResult? TryParseQuestionBank(
+        string rawResponse, Guid protocolId, string modelName, IReadOnlyList<EligibilityCriterion> approvedCriteria)
     {
         try
         {
@@ -118,6 +131,7 @@ public class QuestionBankService
 
             var demographicsQuestions = new List<ScreeningQuestion>();
             var criteriaQuestions = new List<ScreeningQuestion>();
+            var criteriaById = approvedCriteria.ToDictionary(c => c.CriterionId, StringComparer.OrdinalIgnoreCase);
 
             foreach (var sectionEl in sectionsEl.EnumerateArray())
             {
@@ -139,7 +153,7 @@ public class QuestionBankService
 
                 foreach (var item in questionsEl.EnumerateArray())
                 {
-                    var question = MapQuestion(item, protocolId, sectionName, modelName);
+                    var question = MapQuestion(item, protocolId, sectionName, modelName, criteriaById);
                     if (question is not null)
                     {
                         targetList.Add(question);
@@ -176,6 +190,12 @@ public class QuestionBankService
             var (dedupedCriteriaQuestions, additionalSuppressed) = RemoveDuplicateCriteriaQuestions(demographicsQuestions, criteriaQuestions);
             suppressed.AddRange(additionalSuppressed);
 
+            // Same defensive posture for the sex question: whatever Claude did or
+            // didn't generate under this reserved ID is discarded and deterministically
+            // rebuilt from the approved criteria, so it's always present exactly when
+            // needed and always in the exact shape AdaptiveQuestionService expects.
+            demographicsQuestions = EnsureSexQuestion(protocolId, demographicsQuestions, approvedCriteria, modelName);
+
             var allQuestions = demographicsQuestions.Concat(dedupedCriteriaQuestions).ToList();
 
             return new QuestionBankResult(allQuestions, suppressed, rationale, UsedFallback: false, FallbackReason: null);
@@ -187,7 +207,8 @@ public class QuestionBankService
         }
     }
 
-    private static ScreeningQuestion? MapQuestion(JsonElement item, Guid protocolId, string sectionName, string modelName)
+    private static ScreeningQuestion? MapQuestion(
+        JsonElement item, Guid protocolId, string sectionName, string modelName, Dictionary<string, EligibilityCriterion> criteriaById)
     {
         if (!item.TryGetProperty("questionId", out var idEl) || idEl.ValueKind != JsonValueKind.String)
         {
@@ -214,9 +235,20 @@ public class QuestionBankService
         // missing or blank, synthesize a rule-based explanation rather than
         // persisting an empty field the UI would have nothing to show for.
         var whyAsked = GetStringOrNull(item, "whyAsked");
+        var linkedCriteriaIds = JsonHelpers.DeserializeStringArray(linkedCriteriaJson);
         if (string.IsNullOrWhiteSpace(whyAsked))
         {
-            whyAsked = BuildDefaultWhyAsked(JsonHelpers.DeserializeStringArray(linkedCriteriaJson), sourceCriteriaText, isDemographic);
+            whyAsked = BuildDefaultWhyAsked(linkedCriteriaIds, sourceCriteriaText, isDemographic);
+        }
+
+        // Only badge the question when it has exactly one linked criterion and
+        // that criterion is sex-specific — a question covering several criteria
+        // with mixed/no sex tags has no single sex to display.
+        string? appliesToSex = null;
+        if (linkedCriteriaIds.Count == 1 &&
+            criteriaById.TryGetValue(linkedCriteriaIds[0], out var linkedCriterion))
+        {
+            appliesToSex = linkedCriterion.AppliesToSex;
         }
 
         return new ScreeningQuestion
@@ -237,6 +269,7 @@ public class QuestionBankService
             IsDuplicateSuppressed = false,
             CanTriggerEarlyStop = item.TryGetProperty("canTriggerEarlyStop", out var earlyEl) && earlyEl.ValueKind == JsonValueKind.True,
             EarlyStopReason = GetStringOrNull(item, "earlyStopReason"),
+            AppliesToSex = appliesToSex,
             PromptVersion = PromptVersion,
             ModelName = modelName
         };
@@ -250,6 +283,66 @@ public class QuestionBankService
         return isDemographic
             ? $"This demographic question helps determine eligibility for {criteriaList}{context}"
             : $"This question checks eligibility criterion {criteriaList}{context}";
+    }
+
+    // Synthesizes (or removes) the DEM-SEX demographic question deterministically,
+    // discarding whatever Claude may have generated under that reserved ID.
+    // Only added when at least one approved criterion actually needs sex-based
+    // gating (plan3.md: "only when needed", never asked unconditionally).
+    private static List<ScreeningQuestion> EnsureSexQuestion(
+        Guid protocolId,
+        List<ScreeningQuestion> demographicsQuestions,
+        IReadOnlyList<EligibilityCriterion> approvedCriteria,
+        string modelName)
+    {
+        var withoutExisting = demographicsQuestions
+            .Where(q => !q.QuestionId.Equals(SexQuestionId, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        var needsSexQuestion = approvedCriteria.Any(c =>
+            c.AppliesToSex is not null &&
+            (c.AppliesToSex.Equals("Male", StringComparison.OrdinalIgnoreCase) ||
+             c.AppliesToSex.Equals("Female", StringComparison.OrdinalIgnoreCase)));
+
+        if (!needsSexQuestion)
+        {
+            return withoutExisting;
+        }
+
+        // Guard against a coincidental displayOrder tie with the sex question,
+        // which always sorts first at 0 — nothing else should also be 0.
+        foreach (var question in withoutExisting)
+        {
+            if (question.DisplayOrder <= 0)
+            {
+                question.DisplayOrder = 1;
+            }
+        }
+
+        var sexQuestion = new ScreeningQuestion
+        {
+            ProtocolId = protocolId,
+            QuestionId = SexQuestionId,
+            Section = "Demographics",
+            QuestionText = "What sex were you assigned at birth?",
+            AnswerType = "single_choice",
+            OptionsJson = JsonSerializer.Serialize(SexQuestionOptions),
+            Priority = "High",
+            DisplayOrder = 0,
+            LinkedCriteriaJson = "[]",
+            CoveredCriteriaJson = "[]",
+            SourceCriteriaText = null,
+            WhyAsked = "Some eligibility criteria in this study only apply to patients of a specific sex (for example, " +
+                "pregnancy-related exclusions). This question ensures only relevant questions are asked.",
+            IsDemographicQuestion = true,
+            IsDuplicateSuppressed = false,
+            CanTriggerEarlyStop = false,
+            EarlyStopReason = null,
+            PromptVersion = PromptVersion,
+            ModelName = modelName
+        };
+
+        return new List<ScreeningQuestion> { sexQuestion }.Concat(withoutExisting).ToList();
     }
 
     private static (List<ScreeningQuestion> Filtered, List<SuppressedDuplicateCriterion> Suppressed) RemoveDuplicateCriteriaQuestions(
@@ -335,6 +428,7 @@ public class QuestionBankService
                 EarlyStopReason = canDisqualify
                     ? $"An answer that does not meet this criterion may mean the patient is likely ineligible ({criterion.CriterionId})."
                     : null,
+                AppliesToSex = criterion.AppliesToSex,
                 PromptVersion = PromptVersion,
                 ModelName = FallbackModelLabel
             };
@@ -386,12 +480,15 @@ public class QuestionBankService
                 EarlyStopReason = canDisqualify
                     ? $"A disqualifying answer here may indicate likely ineligibility due to criterion {criterion.CriterionId}."
                     : null,
+                AppliesToSex = criterion.AppliesToSex,
                 PromptVersion = PromptVersion,
                 ModelName = FallbackModelLabel
             });
 
             criteriaIndex++;
         }
+
+        demographicsQuestions = EnsureSexQuestion(protocolId, demographicsQuestions, approvedCriteria, FallbackModelLabel);
 
         var rationale =
             "Deterministic backend fallback sequencing: criteria markable as demographic questions are asked first as part of " +

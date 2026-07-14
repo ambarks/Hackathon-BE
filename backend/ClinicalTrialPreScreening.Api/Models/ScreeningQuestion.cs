@@ -19,6 +19,11 @@ public class ScreeningQuestion
     public bool IsDuplicateSuppressed { get; set; }
     public bool CanTriggerEarlyStop { get; set; }
     public string? EarlyStopReason { get; set; }
+
+    // Denormalized from the linked criterion's AppliesToSex (only set when the
+    // question has exactly one linked criterion carrying a Male/Female tag) so
+    // the UI can show a badge without cross-referencing the criteria list.
+    public string? AppliesToSex { get; set; }
     public string? PromptVersion { get; set; } // e.g. "question-bank-v1"
     public string? ModelName { get; set; } // actual Claude model, or a fallback-source label
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

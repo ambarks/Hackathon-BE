@@ -104,6 +104,9 @@ export default function SummaryPage() {
             <p>
               <strong>Skipped (session ended early):</strong> {summary.skippedCriteria.join(", ") || "None"}
             </p>
+            <p>
+              <strong>Not applicable to this patient:</strong> {summary.notApplicableCriteria.join(", ") || "None"}
+            </p>
           </div>
 
           <div className="card">

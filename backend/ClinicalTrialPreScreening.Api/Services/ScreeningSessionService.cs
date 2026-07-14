@@ -20,6 +20,7 @@ public record SummaryResult(
     IReadOnlyList<string> FailedCriteria,
     IReadOnlyList<string> NeedsReviewCriteria,
     IReadOnlyList<string> SkippedCriteria,
+    IReadOnlyList<string> NotApplicableCriteria,
     IReadOnlyList<string> MissingInformation,
     IReadOnlyList<string> Reasoning,
     string RecommendedNextAction,
@@ -162,6 +163,26 @@ public class ScreeningSessionService
         // answer, including the deterministic (backend-enforced, never
         // Claude-decided) early-stop recommendation.
         var state = await GetStateAsync(sessionId);
+
+        // The sex question is the only answer that can ever change a criterion's
+        // not_applicable status (plan3.md phase 21), so this is exactly "the
+        // first time" any criterion resolves that way for this session.
+        if (questionId.Equals(QuestionBankService.SexQuestionId, StringComparison.OrdinalIgnoreCase))
+        {
+            var notApplicableCriteria = state.CriterionStates
+                .Where(s => s.Status == "not_applicable")
+                .Select(s => s.CriterionId)
+                .ToList();
+
+            if (notApplicableCriteria.Count > 0)
+            {
+                await _auditService.LogEventAsync(
+                    "CriterionNotApplicable",
+                    sessionId: sessionId,
+                    details: $"criteria={string.Join(",", notApplicableCriteria)}; patientSex={responseText}");
+            }
+        }
+
         session.CurrentSection = state.CurrentSection;
         session.OverallLikelyStatus = state.OverallLikelyStatus;
         session.EarlyStopRecommended = state.EarlyStopTriggered;
@@ -235,6 +256,10 @@ public class ScreeningSessionService
         var satisfied = state.CriterionStates.Where(s => s.Status == "satisfied").Select(s => s.CriterionId).ToList();
         var failed = state.CriterionStates.Where(s => s.Status == "failed").Select(s => s.CriterionId).ToList();
         var needsReview = state.CriterionStates.Where(s => s.Status == "needs_review").Select(s => s.CriterionId).ToList();
+        // Kept strictly separate from "unanswered" — not_applicable means this
+        // criterion doesn't apply to this patient (e.g. sex-specific), never
+        // "the session ended before we got to it" (plan3.md).
+        var notApplicable = state.CriterionStates.Where(s => s.Status == "not_applicable").Select(s => s.CriterionId).ToList();
         var unresolved = state.CriterionStates.Where(s => s.Status == "unanswered").ToList();
         var skipped = unresolved.Select(s => s.CriterionId).ToList();
 
@@ -245,7 +270,7 @@ public class ScreeningSessionService
             .ToList();
 
         var (summaryText, reasoning, nextAction, usedFallback, fallbackReason) =
-            await BuildNarrativeAsync(recommendation, satisfied, failed, needsReview, missingInformation, criteriaById);
+            await BuildNarrativeAsync(recommendation, satisfied, failed, needsReview, notApplicable, missingInformation, criteriaById);
 
         var result = new SummaryResult(
             recommendation,
@@ -257,6 +282,7 @@ public class ScreeningSessionService
             failed,
             needsReview,
             skipped,
+            notApplicable,
             missingInformation,
             reasoning,
             nextAction,
@@ -290,6 +316,7 @@ public class ScreeningSessionService
             FailedCriteriaJson = JsonSerializer.Serialize(result.FailedCriteria),
             NeedsReviewCriteriaJson = JsonSerializer.Serialize(result.NeedsReviewCriteria),
             SkippedCriteriaJson = JsonSerializer.Serialize(result.SkippedCriteria),
+            NotApplicableCriteriaJson = JsonSerializer.Serialize(result.NotApplicableCriteria),
             MissingInformationJson = JsonSerializer.Serialize(result.MissingInformation),
             ReasoningJson = JsonSerializer.Serialize(result.Reasoning),
             RecommendedNextAction = result.RecommendedNextAction,
@@ -304,6 +331,7 @@ public class ScreeningSessionService
         List<string> satisfied,
         List<string> failed,
         List<string> needsReview,
+        List<string> notApplicable,
         List<string> missingInformation,
         Dictionary<string, EligibilityCriterion> criteriaById)
     {
@@ -320,6 +348,8 @@ public class ScreeningSessionService
             $"Satisfied criteria: {string.Join(", ", satisfied)}\n" +
             $"Failed criteria: {string.Join(", ", failed)}\n" +
             $"Needs-review criteria: {string.Join(", ", needsReview)}\n" +
+            $"Not applicable to this patient (e.g. sex-specific criteria that do not apply — do not treat these as missing " +
+            $"or as a reason for concern): {string.Join(", ", notApplicable)}\n" +
             $"Missing/unanswered information: {string.Join("; ", missingInformation)}\n";
 
         var rawResponse = await _claudeService.SendAsync(systemPrompt, userPrompt);
@@ -334,7 +364,7 @@ public class ScreeningSessionService
             _logger.LogError("Claude returned summary JSON that could not be parsed. Using rule-based summary.");
         }
 
-        var fallback = BuildRuleBasedNarrative(recommendation, satisfied, failed, needsReview, missingInformation, criteriaById);
+        var fallback = BuildRuleBasedNarrative(recommendation, satisfied, failed, needsReview, notApplicable, missingInformation, criteriaById);
         return (fallback.Summary, fallback.Reasoning, fallback.NextAction, true, "Claude summary generation unavailable; used rule-based summary.");
     }
 
@@ -381,6 +411,7 @@ public class ScreeningSessionService
         List<string> satisfied,
         List<string> failed,
         List<string> needsReview,
+        List<string> notApplicable,
         List<string> missingInformation,
         Dictionary<string, EligibilityCriterion> criteriaById)
     {
@@ -396,6 +427,12 @@ public class ScreeningSessionService
         {
             var text = criteriaById.TryGetValue(id, out var c) ? c.SimpleMeaning ?? c.OriginalText : id;
             reasoning.Add($"{id} needs clinical confirmation: {text}");
+        }
+
+        foreach (var id in notApplicable)
+        {
+            var text = criteriaById.TryGetValue(id, out var c) ? c.SimpleMeaning ?? c.OriginalText : id;
+            reasoning.Add($"{id} was not applicable based on the patient's reported sex and was not asked: {text}");
         }
 
         reasoning.AddRange(missingInformation);

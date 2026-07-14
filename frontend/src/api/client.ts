@@ -104,6 +104,9 @@ export interface Criterion {
   sourceSection: string | null;
   requiresClinicalReview: boolean;
   canBeCoveredByDemographics: boolean;
+  // Null means this criterion applies regardless of sex. Set only when the
+  // criterion is biologically irrelevant to the other sex (e.g. pregnancy).
+  appliesToSex: string | null;
   isApproved: boolean;
   promptVersion: string | null;
   modelName: string | null;
@@ -148,6 +151,9 @@ export interface ScreeningQuestion {
   isDuplicateSuppressed: boolean;
   canTriggerEarlyStop: boolean;
   earlyStopReason: string | null;
+  // Set only when this question has exactly one linked criterion and that
+  // criterion is sex-specific (e.g. pregnancy) — null otherwise.
+  appliesToSex: string | null;
   promptVersion: string | null;
   modelName: string | null;
 }
@@ -287,6 +293,10 @@ export interface SessionSummary {
   failedCriteria: string[];
   needsReviewCriteria: string[];
   skippedCriteria: string[];
+  // Criteria that don't apply to this patient (e.g. sex-specific) — distinct
+  // from skippedCriteria, which means "unanswered because the session ended
+  // early."
+  notApplicableCriteria: string[];
   missingInformation: string[];
   reasoning: string[];
   recommendedNextAction: string;

@@ -169,6 +169,81 @@ if [ -n "$protocol_id" ]; then
     echo "[FAIL] POST /api/screening-sessions (no sessionId in response: $session_response)"
     FAIL=$((FAIL + 1))
   fi
+
+  echo "== Sex-specific question filtering (male patient never asked pregnancy question) =="
+  sex_session_response=$(curl -s -X POST "$BASE_URL/api/screening-sessions" \
+    -H "Content-Type: application/json" \
+    -d "{\"protocolId\":\"$protocol_id\",\"patientAlias\":\"Smoke-Test-Male-Patient\"}")
+  sex_session_id=$(extract_field "$sex_session_response" "sessionId")
+
+  if [ -n "$sex_session_id" ]; then
+    first_nq=$(curl -s "$BASE_URL/api/screening-sessions/$sex_session_id/next-question")
+    first_qid=$(extract_field "$first_nq" "questionId")
+
+    if [ "$first_qid" = "DEM-SEX" ]; then
+      echo "[PASS] DEM-SEX is asked first (sample protocol has a Female-tagged criterion)"
+      PASS=$((PASS + 1))
+    else
+      echo "[FAIL] Expected DEM-SEX as the first question, got: $first_qid"
+      FAIL=$((FAIL + 1))
+    fi
+
+    curl -s -X POST "$BASE_URL/api/screening-sessions/$sex_session_id/answers" \
+      -H "Content-Type: application/json" \
+      -d '{"questionId":"DEM-SEX","response":"Male"}' > /dev/null
+
+    # Walk the rest of the session with generic non-disqualifying answers,
+    # confirming the pregnancy question (linked to EXC-002) never appears.
+    pregnancy_question_seen=false
+    for i in $(seq 1 15); do
+      nq=$(curl -s "$BASE_URL/api/screening-sessions/$sex_session_id/next-question")
+      if ! echo "$nq" | grep -q '"hasNextQuestion"[[:space:]]*:[[:space:]]*true'; then
+        break
+      fi
+
+      if echo "$nq" | grep -q 'EXC-002'; then
+        pregnancy_question_seen=true
+        break
+      fi
+
+      qid=$(extract_field "$nq" "questionId")
+      answer_type=$(extract_field "$nq" "answerType")
+      if [ -z "$qid" ]; then
+        break
+      fi
+
+      default_response="N/A"
+      if [ "$answer_type" = "yes_no" ]; then
+        default_response="No"
+      elif [ "$answer_type" = "number" ]; then
+        default_response="52"
+      fi
+      curl -s -X POST "$BASE_URL/api/screening-sessions/$sex_session_id/answers" \
+        -H "Content-Type: application/json" \
+        -d "{\"questionId\":\"$qid\",\"response\":\"$default_response\"}" > /dev/null
+    done
+
+    if [ "$pregnancy_question_seen" = "true" ]; then
+      echo "[FAIL] EXC-002 (pregnancy) question was shown to a male patient"
+      FAIL=$((FAIL + 1))
+    else
+      echo "[PASS] EXC-002 (pregnancy) question was never shown to a male patient"
+      PASS=$((PASS + 1))
+    fi
+
+    curl -s -X POST "$BASE_URL/api/screening-sessions/$sex_session_id/end" > /dev/null
+    summary_response=$(curl -s "$BASE_URL/api/screening-sessions/$sex_session_id/summary")
+    if echo "$summary_response" | grep -q "not_applicable"; then
+      echo "[PASS] Summary reflects a not_applicable criterion status (EXC-002)"
+      PASS=$((PASS + 1))
+    else
+      echo "[FAIL] Summary did not reflect any not_applicable criterion: $summary_response"
+      FAIL=$((FAIL + 1))
+    fi
+  else
+    echo "[FAIL] Could not create a second session to test sex-based filtering (response: $sex_session_response)"
+    FAIL=$((FAIL + 1))
+  fi
 fi
 
 echo

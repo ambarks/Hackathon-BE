@@ -57,7 +57,13 @@ public class CriteriaExtractionService
         "{ \"criteria\": [ { \"criterionId\": \"INC-001\", \"type\": \"Inclusion\", \"originalText\": \"...\", " +
         "\"simpleMeaning\": \"...\", \"patientQuestion\": \"...\", \"answerType\": \"yes_no|single_choice|free_text|date|number\", " +
         "\"options\": [], \"eligibilityImpact\": \"Required|Exclusionary|Needs Review\", \"priority\": \"High|Medium|Low\", " +
-        "\"sourceSection\": \"...\", \"requiresClinicalReview\": false, \"canBeCoveredByDemographics\": false } ] }\n\n" +
+        "\"sourceSection\": \"...\", \"requiresClinicalReview\": false, \"canBeCoveredByDemographics\": false, " +
+        "\"appliesToSex\": \"Male|Female|All\" } ] }\n\n" +
+        "For appliesToSex: set \"Female\" or \"Male\" ONLY when the criterion is biologically irrelevant to the " +
+        "other sex (e.g. pregnancy/breastfeeding is Female-only, prostate-related conditions are Male-only). " +
+        "Do NOT use appliesToSex for a protocol-level restriction on which sex the trial enrolls overall — that is " +
+        "just a normal criterion with its own patientQuestion. Default to \"All\" whenever a criterion applies " +
+        "regardless of sex.\n\n" +
         "Protocol text:\n" + protocolText;
 
     private List<EligibilityCriterion>? TryParseCriteria(string rawResponse, Guid protocolId, string modelName)
@@ -106,14 +112,18 @@ public class CriteriaExtractionService
             optionsJson = optionsEl.GetRawText();
         }
 
+        var originalText = GetStringOrDefault(item, "originalText", string.Empty);
+        var simpleMeaning = GetStringOrNull(item, "simpleMeaning");
+        var patientQuestion = GetStringOrNull(item, "patientQuestion");
+
         return new EligibilityCriterion
         {
             ProtocolId = protocolId,
             CriterionId = criterionIdEl.GetString() ?? string.Empty,
             Type = GetStringOrDefault(item, "type", "Inclusion"),
-            OriginalText = GetStringOrDefault(item, "originalText", string.Empty),
-            SimpleMeaning = GetStringOrNull(item, "simpleMeaning"),
-            PatientQuestion = GetStringOrNull(item, "patientQuestion"),
+            OriginalText = originalText,
+            SimpleMeaning = simpleMeaning,
+            PatientQuestion = patientQuestion,
             AnswerType = GetStringOrDefault(item, "answerType", "yes_no"),
             OptionsJson = optionsJson,
             EligibilityImpact = GetStringOrDefault(item, "eligibilityImpact", "Required"),
@@ -123,6 +133,7 @@ public class CriteriaExtractionService
                                      reviewEl.ValueKind == JsonValueKind.True,
             CanBeCoveredByDemographics = item.TryGetProperty("canBeCoveredByDemographics", out var demoEl) &&
                                          demoEl.ValueKind == JsonValueKind.True,
+            AppliesToSex = SexApplicabilityHeuristics.Apply(GetStringOrNull(item, "appliesToSex"), originalText, simpleMeaning, patientQuestion),
             IsApproved = false,
             PromptVersion = PromptVersion,
             ModelName = modelName

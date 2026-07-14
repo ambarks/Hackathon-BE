@@ -238,6 +238,7 @@ function CriterionRow({
         </span>
         <span className={`badge badge-${criterion.priority.toLowerCase()}`}>{criterion.priority} priority</span>
         {criterion.canBeCoveredByDemographics && <span className="badge badge-low">Demographics-coverable</span>}
+        {criterion.appliesToSex && <span className="badge badge-needs_review">Applies to: {criterion.appliesToSex}</span>}
         {criterion.isApproved && <span className="badge badge-satisfied">Approved</span>}
       </div>
       <p>

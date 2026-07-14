@@ -13,6 +13,10 @@ public class ScreeningSummary
     public string? FailedCriteriaJson { get; set; }
     public string? NeedsReviewCriteriaJson { get; set; }
     public string? SkippedCriteriaJson { get; set; }
+    // Criteria resolved as not_applicable (plan3.md) — kept distinct from
+    // SkippedCriteriaJson, which means "unanswered because the session ended
+    // early," not "irrelevant to this patient."
+    public string? NotApplicableCriteriaJson { get; set; }
     public string? MissingInformationJson { get; set; }
     public string? ReasoningJson { get; set; }
     public string? RecommendedNextAction { get; set; }

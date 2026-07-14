@@ -96,7 +96,8 @@
       "priority": "High",
       "sourceSection": "Exclusion Criteria",
       "requiresClinicalReview": false,
-      "canBeCoveredByDemographics": true
+      "canBeCoveredByDemographics": true,
+      "appliesToSex": "Female"
     },
     {
       "criterionId": "EXC-003",

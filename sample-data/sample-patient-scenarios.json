@@ -44,6 +44,26 @@
       "earlyStopNote": "As soon as the age question is answered '16', the answers endpoint returns earlyStopRecommended=true with a reason referencing criterion INC-001. The session stays InProgress and next-question keeps working; the recruiter chooses End & View Summary (POST /{sessionId}/end) or Continue Screening. In fallback mode (Claude unavailable) this specific numeric-range case is NOT caught by the deterministic yes/no heuristic — a documented limitation, see README.md/CODESETUP.md hackathon simplifications."
     },
     {
+      "scenarioId": "SCN-SEX-FILTER-001",
+      "label": "Sex-Specific Question Filtering (male patient)",
+      "patientAlias": "Patient-Echo",
+      "description": "A male patient. The 'What sex were you assigned at birth?' demographic question (DEM-SEX) is asked first because EXC-002 (pregnancy) is tagged appliesToSex: Female; answering 'Male' means EXC-002 resolves to not_applicable and its dedicated question is never shown.",
+      "expectedRecommendation": "Needs Clinical Review",
+      "sampleAnswers": [
+        { "criterionId": null, "topic": "Sex assigned at birth (DEM-SEX)", "response": "Male", "notes": "Triggers EXC-002 (pregnancy) to resolve as not_applicable; that question is never asked." },
+        { "criterionId": "INC-001", "topic": "Age", "response": "52", "notes": "Within 18-75 range." },
+        { "criterionId": "INC-002", "topic": "Type 2 Diabetes diagnosis duration", "response": "Yes" },
+        { "criterionId": "INC-003", "topic": "Recent HbA1c", "response": "Yes, within range" },
+        { "criterionId": "INC-004", "topic": "Visit availability", "response": "Yes" },
+        { "criterionId": "INC-005", "topic": "Informed consent capability", "response": "Yes" },
+        { "criterionId": "EXC-001", "topic": "Type 1 Diabetes history", "response": "No" },
+        { "criterionId": "EXC-003", "topic": "Severe renal impairment", "response": "No" },
+        { "criterionId": "EXC-004", "topic": "Insulin therapy", "response": "No, not taking insulin" },
+        { "criterionId": "EXC-005", "topic": "Drug hypersensitivity", "response": "No" }
+      ],
+      "notApplicableNote": "EXC-002 (pregnancy/breastfeeding) resolves to not_applicable and is listed separately in the summary under 'Not applicable to this patient' — never under missing/skipped information. As in Scenario 1, HbA1c/insulin/kidney are requiresClinicalReview criteria, so the overall recommendation still lands on Needs Clinical Review rather than Likely Eligible."
+    },
+    {
       "scenarioId": "SCN-NEEDS-REVIEW-001",
       "label": "Needs Clinical Review",
       "patientAlias": "Patient-Charlie",

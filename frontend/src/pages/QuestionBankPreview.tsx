@@ -140,6 +140,7 @@ function QuestionCard({ question }: { question: ScreeningQuestion }) {
         <span className="criterion-code">{question.questionId}</span>
         <span className={`badge badge-${question.priority.toLowerCase()}`}>{question.priority} priority</span>
         {question.canTriggerEarlyStop && <span className="badge badge-failed">Can trigger early stop</span>}
+        {question.appliesToSex && <span className="badge badge-needs_review">Applies to: {question.appliesToSex}</span>}
       </div>
       <p>
         <strong>{question.questionText}</strong>

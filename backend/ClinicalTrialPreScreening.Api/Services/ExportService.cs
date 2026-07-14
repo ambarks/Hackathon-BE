@@ -16,6 +16,7 @@ public record SessionExportData(
     IReadOnlyList<string> FailedCriteria,
     IReadOnlyList<string> NeedsReviewCriteria,
     IReadOnlyList<string> SkippedCriteria,
+    IReadOnlyList<string> NotApplicableCriteria,
     IReadOnlyList<string> MissingInformation,
     IReadOnlyList<string> Reasoning,
     string RecommendedNextAction,
@@ -52,6 +53,11 @@ public class ExportService
         foreach (var item in data.CriteriaSummary)
         {
             AppendRow(sb, "Criteria", $"{item.CriterionId} ({item.Type})", item.Status);
+        }
+
+        foreach (var criterionId in data.NotApplicableCriteria)
+        {
+            AppendRow(sb, "NotApplicable", criterionId, "Not applicable to this patient (e.g. sex-specific criterion).");
         }
 
         foreach (var reason in data.Reasoning)
