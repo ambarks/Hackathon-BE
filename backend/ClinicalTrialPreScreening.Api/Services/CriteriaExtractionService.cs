@@ -22,7 +22,11 @@ public class CriteriaExtractionService
 
     public async Task<CriteriaExtractionResult> ExtractAsync(Guid protocolId, string protocolText)
     {
-        var rawResponse = await _claudeService.SendAsync(BuildSystemPrompt(), BuildUserPrompt(protocolText));
+        // A full protocol can yield 10+ criteria, each with several verbose text
+        // fields (originalText, simpleMeaning, patientQuestion, sourceSection) —
+        // the default 4096-token cap can truncate the JSON mid-object before it's
+        // valid. Use a higher cap so the full criteria array actually completes.
+        var rawResponse = await _claudeService.SendAsync(BuildSystemPrompt(), BuildUserPrompt(protocolText), maxTokens: 8192);
 
         if (rawResponse is not null)
         {

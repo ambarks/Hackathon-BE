@@ -33,7 +33,11 @@ public class QuestionBankService
 
     public async Task<QuestionBankResult> GenerateAsync(Guid protocolId, IReadOnlyList<EligibilityCriterion> approvedCriteria)
     {
-        var rawResponse = await _claudeService.SendAsync(BuildSystemPrompt(), BuildUserPrompt(approvedCriteria));
+        // Two sections' worth of questions (demographics + criteria), each with
+        // whyAsked/linkedCriteria/etc., can easily exceed the default 4096-token
+        // cap and truncate the JSON mid-object — same failure mode as
+        // CriteriaExtractionService. Use a higher cap so it actually completes.
+        var rawResponse = await _claudeService.SendAsync(BuildSystemPrompt(), BuildUserPrompt(approvedCriteria), maxTokens: 8192);
 
         if (rawResponse is not null)
         {

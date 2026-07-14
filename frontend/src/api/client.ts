@@ -1,32 +1,42 @@
+import { beginRequest, endRequest } from "./loadingStore";
+
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${BASE_URL}${path}`, {
-    ...init,
-    headers: {
-      ...(init?.body && !(init.body instanceof FormData) ? { "Content-Type": "application/json" } : {}),
-      ...init?.headers
-    }
-  });
-
-  if (!response.ok) {
-    let message = `Request failed (${response.status})`;
-    try {
-      const body = await response.json();
-      if (body?.message) {
-        message = body.message;
+  // Every call through here — from any page — counts toward the global
+  // loading overlay (see Layout.tsx), so slow backend/Claude calls always
+  // show a blocking indicator without every page having to wire up its own.
+  beginRequest();
+  try {
+    const response = await fetch(`${BASE_URL}${path}`, {
+      ...init,
+      headers: {
+        ...(init?.body && !(init.body instanceof FormData) ? { "Content-Type": "application/json" } : {}),
+        ...init?.headers
       }
-    } catch {
-      // Ignore non-JSON error bodies.
+    });
+
+    if (!response.ok) {
+      let message = `Request failed (${response.status})`;
+      try {
+        const body = await response.json();
+        if (body?.message) {
+          message = body.message;
+        }
+      } catch {
+        // Ignore non-JSON error bodies.
+      }
+      throw new Error(message);
     }
-    throw new Error(message);
-  }
 
-  if (response.status === 204) {
-    return undefined as T;
-  }
+    if (response.status === 204) {
+      return undefined as T;
+    }
 
-  return response.json() as Promise<T>;
+    return (await response.json()) as T;
+  } finally {
+    endRequest();
+  }
 }
 
 // ---- Health ----
