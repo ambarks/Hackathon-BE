@@ -22,7 +22,10 @@ public class CriteriaExtractionService
 
     public async Task<CriteriaExtractionResult> ExtractAsync(Guid protocolId, string protocolText)
     {
-        var rawResponse = await _claudeService.SendAsync(BuildSystemPrompt(), BuildUserPrompt(protocolText));
+        // Real-world protocols can have many inclusion/exclusion criteria with lettered
+        // sub-parts (e.g. the ATLANTIS trial's 8+8 criteria); the default 4096-token cap
+        // truncates the JSON array mid-object well before Claude finishes enumerating them.
+        var rawResponse = await _claudeService.SendAsync(BuildSystemPrompt(), BuildUserPrompt(protocolText), maxTokens: 16000);
 
         if (rawResponse is not null)
         {

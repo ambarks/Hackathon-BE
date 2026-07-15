@@ -21,6 +21,7 @@ public class QuestionBankService
 {
     private const string PromptVersion = "question-bank-v1";
     private const string FallbackModelLabel = "fallback-deterministic-sequencing";
+    private const int MaxTotalQuestions = 18;
 
     private readonly ClaudeService _claudeService;
     private readonly ILogger<QuestionBankService> _logger;
@@ -33,7 +34,10 @@ public class QuestionBankService
 
     public async Task<QuestionBankResult> GenerateAsync(Guid protocolId, IReadOnlyList<EligibilityCriterion> approvedCriteria)
     {
-        var rawResponse = await _claudeService.SendAsync(BuildSystemPrompt(), BuildUserPrompt(approvedCriteria));
+        // Question bank JSON is verbose per question (text, whyAsked, linkedCriteria, etc.);
+        // the default 4096-token cap truncates it for protocols with many approved criteria,
+        // same failure mode as criteria extraction, so give it the same headroom.
+        var rawResponse = await _claudeService.SendAsync(BuildSystemPrompt(), BuildUserPrompt(approvedCriteria), maxTokens: 16000);
 
         if (rawResponse is not null)
         {
@@ -54,7 +58,12 @@ public class QuestionBankService
         "Use only the provided eligibility criteria. If information is missing or uncertain, say so. Return valid JSON where requested. " +
         "Keep patient-facing wording simple. The final decision remains with the recruiter/clinical reviewer. " +
         "Generate exactly two question sections: Demographics and Criteria. Do not generate separate Inclusion and Exclusion sections. " +
-        "Optimize Criteria question order for faster screening. Avoid duplicate questions if a demographic answer already covers the criterion.";
+        $"Sequence the Criteria section so exclusion criteria (fast disqualifiers) come before inclusion criteria, prioritizing the " +
+        "highest-impact/highest-priority questions first within each group, so a patient's ineligibility can be identified as early " +
+        $"as possible. The total number of questions across both sections combined must not exceed {MaxTotalQuestions}; if there are " +
+        "more approved criteria than that, choose the most decision-critical ones (high-impact exclusions and essential high-priority " +
+        "inclusions) and omit lower-priority or redundant criteria rather than truncating arbitrarily. " +
+        "Avoid duplicate questions if a demographic answer already covers the criterion.";
 
     private static string BuildUserPrompt(IReadOnlyList<EligibilityCriterion> criteria)
     {
@@ -83,10 +92,11 @@ public class QuestionBankService
             "- Return linkedCriteria for each question.\n" +
             "- Return coveredCriteria for demographic questions.\n" +
             "- Return suppressedDuplicateCriteria for criteria that should not be asked separately.\n" +
-            "- For the Criteria section, mix inclusion and exclusion criteria based on fastest screening value.\n" +
-            "- Do not ask all inclusion criteria first.\n" +
-            "- Do not ask all exclusion criteria first.\n" +
-            "- Ask high-impact disqualifying questions early when appropriate.\n" +
+            "- For the Criteria section, ask exclusion criteria before inclusion criteria so a disqualifying answer surfaces as early " +
+            "as possible; within exclusion criteria and within inclusion criteria, ask the highest-priority/highest-impact ones first.\n" +
+            $"- Keep the combined Demographics + Criteria question count at or below {MaxTotalQuestions}. If more approved criteria " +
+            "exist than fit, keep the highest-impact exclusion criteria and the essential high-priority inclusion criteria, and omit " +
+            "the rest — never drop a high-impact disqualifying criterion to keep a lower-priority one.\n" +
             "- Keep patient-facing questions short, simple, and conversational.\n" +
             "- Return valid JSON only, matching exactly this shape:\n" +
             "{ \"sections\": [ { \"section\": \"Demographics\", \"displayOrder\": 1, \"questions\": [ { \"questionId\": \"DEM-001\", " +
@@ -172,7 +182,7 @@ public class QuestionBankService
             var (dedupedCriteriaQuestions, additionalSuppressed) = RemoveDuplicateCriteriaQuestions(demographicsQuestions, criteriaQuestions);
             suppressed.AddRange(additionalSuppressed);
 
-            var allQuestions = demographicsQuestions.Concat(dedupedCriteriaQuestions).ToList();
+            var allQuestions = ApplyMaxQuestionCap(demographicsQuestions, dedupedCriteriaQuestions, ref rationale);
 
             return new QuestionBankResult(allQuestions, suppressed, rationale, UsedFallback: false, FallbackReason: null);
         }
@@ -293,9 +303,13 @@ public class QuestionBankService
         // that produced it), so both groups are explicitly sorted here to make
         // this fallback's numbering (DEM-001, CRT-001, ...) actually deterministic
         // across runs rather than following whatever arbitrary order SQL Server returned.
+        // Exclusionary-impact demographic questions (quick disqualifiers, e.g. pregnancy,
+        // age cutoffs) are asked before Required ones for the same reason Criteria
+        // sequencing puts exclusion first: they can end screening earliest.
         var demographicCriteria = approvedCriteria
             .Where(c => c.CanBeCoveredByDemographics)
-            .OrderByDescending(c => PriorityRank(c.Priority))
+            .OrderByDescending(c => c.EligibilityImpact.Equals("Exclusionary", StringComparison.OrdinalIgnoreCase) ? 1 : 0)
+            .ThenByDescending(c => PriorityRank(c.Priority))
             .ThenBy(c => c.CriterionId, StringComparer.OrdinalIgnoreCase)
             .ToList();
         var remainingCriteria = approvedCriteria.Where(c => !c.CanBeCoveredByDemographics).ToList();
@@ -340,12 +354,14 @@ public class QuestionBankService
             demoIndex++;
         }
 
-        // Deterministic mixed sequencing: highest priority first; within the same
-        // priority tier, exclusion criteria are asked before inclusion criteria
-        // since they can disqualify a patient faster (prompt.txt section F).
+        // Deterministic mixed sequencing: exclusion criteria are asked before inclusion
+        // criteria (a disqualifying answer ends screening fastest), and within each
+        // group the highest-priority/highest-impact criteria are asked first. This is
+        // also what determines which criteria survive the MaxTotalQuestions cap below,
+        // since it's applied by taking the front of this ordered list.
         var orderedCriteria = remainingCriteria
-            .OrderByDescending(c => PriorityRank(c.Priority))
-            .ThenBy(c => c.Type.Equals("Exclusion", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+            .OrderByDescending(c => c.Type.Equals("Exclusion", StringComparison.OrdinalIgnoreCase) ? 1 : 0)
+            .ThenByDescending(c => PriorityRank(c.Priority))
             .ThenBy(c => c.CriterionId, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
@@ -386,7 +402,7 @@ public class QuestionBankService
             "Demographics; remaining criteria are then ordered by priority (High to Low), with exclusion criteria placed before " +
             "inclusion criteria within the same priority tier so high-impact disqualifying questions are asked early.";
 
-        var allQuestions = demographicsQuestions.Concat(criteriaQuestions).ToList();
+        var allQuestions = ApplyMaxQuestionCap(demographicsQuestions, criteriaQuestions, ref rationale);
 
         return new QuestionBankResult(
             allQuestions,
@@ -394,6 +410,32 @@ public class QuestionBankService
             rationale,
             UsedFallback: true,
             FallbackReason: "Claude question bank generation unavailable; used deterministic backend sequencing.");
+    }
+
+    // Caps the total patient-facing question count regardless of source (Claude or
+    // deterministic fallback). Demographics questions are kept in full (they're few
+    // and always asked first); Criteria questions are truncated to the remaining
+    // budget, preserving whatever priority/early-stop-first order was already
+    // computed upstream so the highest-value questions are the ones kept.
+    private static List<ScreeningQuestion> ApplyMaxQuestionCap(
+        List<ScreeningQuestion> demographicsQuestions,
+        List<ScreeningQuestion> criteriaQuestions,
+        ref string rationale)
+    {
+        var totalBeforeCap = demographicsQuestions.Count + criteriaQuestions.Count;
+        if (totalBeforeCap <= MaxTotalQuestions)
+        {
+            return demographicsQuestions.Concat(criteriaQuestions).ToList();
+        }
+
+        var cappedDemographics = demographicsQuestions.Take(MaxTotalQuestions).ToList();
+        var remainingBudget = Math.Max(0, MaxTotalQuestions - cappedDemographics.Count);
+        var cappedCriteria = criteriaQuestions.Take(remainingBudget).ToList();
+
+        rationale += $" Question count capped at {MaxTotalQuestions} (from {totalBeforeCap}); " +
+            "lower-priority Criteria questions beyond the cap were dropped.";
+
+        return cappedDemographics.Concat(cappedCriteria).ToList();
     }
 
     private static int PriorityRank(string priority) => priority switch

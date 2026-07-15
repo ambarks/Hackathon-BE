@@ -35,7 +35,10 @@ builder.Services.AddHostedService<DatabaseInitializationService>();
 builder.Services.AddSingleton<ProtocolTextExtractionService>();
 builder.Services.AddSingleton<ProtocolChunkingService>();
 builder.Services.AddSingleton<AiStatusService>();
-builder.Services.AddHttpClient<ClaudeService>();
+// Criteria extraction on large real-world protocols asks Claude to enumerate many
+// verbose criteria objects, which can take longer than the default 100s HttpClient
+// timeout to generate; give it headroom rather than aborting mid-response.
+builder.Services.AddHttpClient<ClaudeService>(client => client.Timeout = TimeSpan.FromMinutes(4));
 builder.Services.AddScoped<CriteriaExtractionService>();
 builder.Services.AddScoped<QuestionBankService>();
 builder.Services.AddSingleton<AdaptiveQuestionService>();
